@@ -868,13 +868,15 @@
     px(0, R(62), VW, 2, C.wallTrim);
     px(0, FLOOR_Y - R(10), VW, R(10), C.skirt);
 
-    const sw = R(216), sh = R(44), sy = R(68), sx0 = R(60) - cam;
+    const sign = (SEED.hallSign && SEED.hallSign.length === 2)
+      ? SEED.hallSign : ["КУРС", "КАПИТАН ГРАЖДАНСКОГО СУДНА"];
+    const sw = R(268), sh = R(46), sy = R(66), sx0 = R(50) - cam;
     if (sx0 > -sw - 40 && sx0 < VW + 60) {
       px(sx0 - 2, sy - 2, sw + 4, sh + 4, "#0b1b27");
       px(sx0, sy, sw, sh, "#102636");
       px(sx0, sy, sw, 2, C.amber);
-      text("SKIPI", sx0 + sw / 2, sy + R(7), R(13), C.paper, "center");
-      text("EDUCATION", sx0 + sw / 2, sy + R(24), R(9), C.teal, "center");
+      textFit(sign[0], sx0 + sw / 2, sy + R(8), R(9), C.teal, "center", sw - R(16));
+      textFit(sign[1], sx0 + sw / 2, sy + R(23), R(13), C.paper, "center", sw - R(16));
     }
     const all = stands.length > 0 && stands.every((s) => seen.has(s.id));
     DOORS.forEach((d, i) => drawDoor(d.x - cam, d.label, d.open, i === 0 && all));

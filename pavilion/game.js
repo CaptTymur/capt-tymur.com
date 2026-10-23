@@ -234,6 +234,12 @@
       note: raw.note || "",
       image: raw.image || null,          // dataURL либо путь к файлу
       caption: raw.caption || "",
+      videos: Array.isArray(raw.videos)
+        ? raw.videos.filter((v) => v && v.url).map((v) => ({
+            label: String(v.label || "Видео к занятию"),
+            url: String(v.url)
+          }))
+        : [],
       downloads: Array.isArray(raw.downloads)
         ? raw.downloads.filter((d) => d && d.file).map((d) => ({
             label: String(d.label || d.file),
@@ -260,7 +266,8 @@
     const plain = stands.map((s) => ({
       id: s.id, short: s.short, icon: s.icon, accent: s.accent, title: s.title, lead: s.lead,
       body: s.body, pointsTitle: s.pointsTitle, points: s.points, note: s.note,
-      image: s.image, caption: s.caption, downloads: s.downloads, draft: s.draft, custom: s.custom
+      image: s.image, caption: s.caption, videos: s.videos, downloads: s.downloads,
+      draft: s.draft, custom: s.custom
     }));
     await storeSet(PID, { version: 1, savedAt: new Date().toISOString(), stands: plain });
   }
@@ -497,6 +504,7 @@
       n.textContent = "Стенд пока пустой. Нажмите «Править стенд» — и положите на него изображение или текст.";
       col.appendChild(n);
     }
+    renderVideos(col, s);
     renderDownloads(col, s);
     $("card-note").textContent = s.note || "";
     $("card-note").hidden = !s.note;
@@ -509,6 +517,31 @@
     markSeen(s.id);
     mark("stand:" + s.id, seen.size);
     syncChrome();
+  }
+
+  // Ссылки на видео к занятию. Открываются в новой вкладке, плеер не встраиваем:
+  // страница статическая, и чужой проигрыватель внутрь карточки не тянем.
+  function renderVideos(body, s) {
+    const list = s.videos || [];
+    if (!list.length) return;
+    const h = document.createElement("div");
+    h.className = "dl-h"; h.style.color = s.accent; h.textContent = "Видео к занятию";
+    body.appendChild(h);
+    list.forEach((v) => {
+      const row = document.createElement("a");
+      row.className = "dl video";
+      row.href = v.url;
+      row.target = "_blank";
+      row.rel = "noopener noreferrer";
+      const k = document.createElement("span");
+      k.className = "kind"; k.textContent = "ВИДЕО";
+      const txt = document.createElement("span");
+      txt.textContent = v.label;
+      const a = document.createElement("span");
+      a.className = "arrow"; a.textContent = "↗";
+      row.appendChild(k); row.appendChild(txt); row.appendChild(a);
+      body.appendChild(row);
+    });
   }
 
   // Файлы на стенде. Запись с hold:true не отдаётся: файл не выложен наружу,
@@ -1091,6 +1124,11 @@
     px(sx - w / 2, base - plate, w, plate, C.standBody2);
     px(sx - w / 2, base - plate, w, 1, "#aab9c5");
     text(String(s.index + 1).padStart(2, "0"), sx - w / 2 + R(6), base - plate + R(2), R(8), "#4a5c69", "left");
+    if (s.videos && s.videos.length) {             // на стенде есть видео
+      const vx = sx + w / 2 - R(44), vy = base - plate + R(2);
+      px(vx, vy, R(9), R(8), "#8a3b2a");
+      px(vx + R(3), vy + R(2), R(3), R(4), "#f3d9d2");
+    }
     if (s.downloads && s.downloads.length) {       // на стенде есть файл
       const mx = sx + w / 2 - R(30), my = base - plate + R(2);
       px(mx, my, R(9), R(8), "#3a5a70");

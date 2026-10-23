@@ -389,7 +389,7 @@
   // Список дверей текущего уровня. Дверь знает, что за ней.
   function doorsOf(level) {
     if (level === "street") {
-      return BUILDINGS.map((b) => ({ kind: "building", ref: b, label: b.label, sub: b.address || "", open: !!b.open }));
+      return BUILDINGS.map((b) => ({ kind: "building", ref: b, label: b.label, sub: "", open: !!b.open }));
     }
     if (level === "hall") {
       return ((building && building.courses) || [])
@@ -1012,7 +1012,7 @@
     elWhere.innerHTML =
       corridor ? esc(SEED.title) + "<small>" + esc(SEED.subtitle || "") + "</small>"
       : game.scene === "street" ? esc(ACADEMY.title || "Академия") + "<small>" + esc(ACADEMY.place || "") + "</small>"
-      : game.scene === "hall" ? esc(building ? building.label : "Корпус") + "<small>" + esc(building && building.address ? building.address : "") + "</small>"
+      : game.scene === "hall" ? esc(building ? building.label : "Корпус") + "<small>" + esc(ACADEMY.title || "") + "</small>"
       : "Вестибюль<small>" + esc(course ? course.label : "") + "</small>";
     if (corridor) {
       const done = stands.filter((s) => seen.has(s.id)).length;
@@ -1094,8 +1094,8 @@
     px(0, FLOOR_Y - R(10), VW, R(10), C.skirt);
 
     const sign = game.scene === "hall"
-      ? [(building && building.address ? building.address : "Академия").toUpperCase(),
-         (building ? building.label : ACADEMY.title || "").toUpperCase()]
+      ? [(ACADEMY.title || "Академия").toUpperCase(),
+         (building ? building.label : "").toUpperCase()]
       : [((course && course.sub) || "Курс").toUpperCase(),
          ((course && course.label) || "").toUpperCase()];
     const sw = R(268), sh = R(46), sy = R(66), sx0 = R(50) - cam;

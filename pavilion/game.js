@@ -100,6 +100,21 @@
     ctx.fillText(s, x | 0, y | 0);
     ctx.textAlign = "left";
   }
+  // надпись, которая обязана влезть в отведённую ширину: шрифт ужимается сам
+  function textFit(s, x, y, size, color, align, maxW) {
+    let sz = Math.max(6, size);
+    ctx.font = "700 " + sz + "px " + MONO;
+    while (sz > 6 && ctx.measureText(s).width > maxW) {
+      sz -= 1;
+      ctx.font = "700 " + sz + "px " + MONO;
+    }
+    ctx.textAlign = align || "left";
+    ctx.textBaseline = "top";
+    ctx.fillStyle = color;
+    ctx.fillText(s, x | 0, y | 0);
+    ctx.textAlign = "left";
+  }
+
   function icon(name, x, y, mul, color) {
     const g = ICONS[name] || ICONS.book;
     ctx.fillStyle = color;
@@ -711,6 +726,15 @@
   const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
 
   /* ═══ титул ═══════════════════════════════════════════════════════════ */
+  // имя павильона берётся из файла содержания, а не зашито в разметку
+  (function nameFromContent() {
+    const main = document.querySelector("#title .title-main");
+    const sub = document.querySelector("#title .title-sub");
+    if (main) main.textContent = (SEED.title || "ПАВИЛЬОН").toUpperCase();
+    if (sub) sub.textContent = SEED.subtitle || "";
+    if (sub) sub.hidden = !SEED.subtitle;
+    document.title = "Skipi Education — павильон «" + (SEED.title || "") + "»";
+  })();
   let titleShown = true;
   function startGame() {
     if (!titleShown) return;
@@ -792,7 +816,7 @@
     const pw = R(96), ph = R(16), py = top - R(22);
     px(sx - pw / 2, py, pw, ph, "#0a1824");
     px(sx - pw / 2, py, pw, 2, open ? C.amber : "#24404f");
-    text(label, sx, py + R(5), R(8), open ? C.paper : "#55738a", "center");
+    textFit(label, sx, py + R(5), R(8), open ? C.paper : "#55738a", "center", pw - R(22));
     px(sx + pw / 2 - R(7), py + R(4), R(4), R(4), open ? "#6ee7a8" : "#6a3030");
     if (done) {
       px(sx - pw / 2 + R(2), py + R(3), R(7), R(7), "#6ee7a8");
@@ -864,7 +888,7 @@
     const pw = R(68), ph = R(14), py = top - R(18);
     px(sx - pw / 2, py, pw, ph, "#0a1824");
     px(sx - pw / 2, py, pw, 2, color);
-    text(label, sx, py + R(4), R(8), C.paper, "center");
+    textFit(label, sx, py + R(4), R(8), C.paper, "center", pw - R(10));
   }
 
   function drawStand(s, sx) {
@@ -897,7 +921,7 @@
     px(sx - w / 2, top, w, h, near ? "#eef3f7" : C.standBody);
     const headH = R(15);
     px(sx - w / 2, top, w, headH, s.accent);
-    text(s.short, sx, top + R(3), R(9), "#1a1205", "center");
+    textFit(s.short, sx, top + R(3), R(9), "#1a1205", "center", w - R(8));
 
     const pad = R(5), ix = sx - w / 2 + pad, iw = w - pad * 2;
     const iy = top + headH + R(5), ih = h - headH - R(22);

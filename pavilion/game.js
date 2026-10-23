@@ -234,6 +234,11 @@
       note: raw.note || "",
       image: raw.image || null,          // dataURL либо путь к файлу
       caption: raw.caption || "",
+      images: Array.isArray(raw.images)
+        ? raw.images.filter((im) => im && im.src).map((im) => ({
+            src: String(im.src), caption: String(im.caption || "")
+          }))
+        : [],
       videos: Array.isArray(raw.videos)
         ? raw.videos.filter((v) => v && v.url).map((v) => ({
             label: String(v.label || "Видео к занятию"),
@@ -266,7 +271,7 @@
     const plain = stands.map((s) => ({
       id: s.id, short: s.short, icon: s.icon, accent: s.accent, title: s.title, lead: s.lead,
       body: s.body, pointsTitle: s.pointsTitle, points: s.points, note: s.note,
-      image: s.image, caption: s.caption, videos: s.videos, downloads: s.downloads,
+      image: s.image, caption: s.caption, images: s.images, videos: s.videos, downloads: s.downloads,
       draft: s.draft, custom: s.custom
     }));
     await storeSet(PID, { version: 1, savedAt: new Date().toISOString(), stands: plain });
@@ -369,7 +374,14 @@
     if (e.code === "Escape") { closeTop(); return; }
     if (typing(e)) return;
     if (titleShown) { if (K_ACT.includes(e.code)) { e.preventDefault(); startGame(); } return; }
-    if (uiOpen()) { if (K_ACT.includes(e.code)) { e.preventDefault(); closeTop(); } return; }
+    if (uiOpen()) {
+      if (carousel && carousel.slides.length > 1 && sheetCard.classList.contains("on")) {
+        if (K_LEFT.includes(e.code)) { e.preventDefault(); showSlide(carousel.i - 1); return; }
+        if (K_RIGHT.includes(e.code)) { e.preventDefault(); showSlide(carousel.i + 1); return; }
+      }
+      if (K_ACT.includes(e.code)) { e.preventDefault(); closeTop(); }
+      return;
+    }
     if (K_LEFT.includes(e.code)) { held.left = true; game.autoTarget = null; e.preventDefault(); }
     if (K_RIGHT.includes(e.code)) { held.right = true; game.autoTarget = null; e.preventDefault(); }
     if (K_ACT.includes(e.code)) { if (!actLatch) { actLatch = true; interact(); } e.preventDefault(); }
@@ -451,7 +463,11 @@
     toastTimer = setTimeout(() => elToast.classList.remove("on"), 2200);
   }
   function openSheet(el) { el.classList.add("on"); }
-  function closeSheet(el) { el.classList.remove("on"); syncChrome(); }
+  function closeSheet(el) {
+    el.classList.remove("on");
+    if (el === sheetCard) carousel = null;   // карусель живёт только в открытой карточке
+    syncChrome();
+  }
   function closeTop() {
     if (sheetEd.classList.contains("on")) { commitEditor(); closeSheet(sheetEd); return; }
     if (sheetData.classList.contains("on")) { closeSheet(sheetData); return; }
@@ -460,6 +476,23 @@
 
   /* ═══ карточка стенда ═════════════════════════════════════════════════ */
   let currentStand = null;
+  let carousel = null;                      // открытая карусель слайдов, если она есть
+
+  function showSlide(n) {
+    if (!carousel) return;
+    const L = carousel.slides.length;
+    const i = ((n % L) + L) % L;
+    carousel.i = i;
+    const sl = carousel.slides[i];
+    carousel.img.src = sl.src;
+    carousel.img.alt = sl.caption || carousel.title;
+    carousel.cap.textContent = sl.caption || "";
+    carousel.cap.hidden = !sl.caption;
+    if (carousel.count) carousel.count.textContent = (i + 1) + " / " + L;
+    if (carousel.dots) {
+      [...carousel.dots.children].forEach((d, k) => d.classList.toggle("on", k === i));
+    }
+  }
   function openStand(s) {
     currentStand = s;
     $("card-no").textContent = "Стенд " + String(s.index + 1).padStart(2, "0") + " из " + String(stands.length).padStart(2, "0");
@@ -471,19 +504,51 @@
     body.innerHTML = "";
     // Со слайдом карточка раскладывается в две колонки: слева инфографика,
     // справа текст. Без слайда — одна колонка во всю ширину.
-    body.classList.toggle("two-col", !!s.image);
+    body.classList.toggle("two-col", !!(s.image || (s.images && s.images.length)));
     let col = body;
-    if (s.image) {
+    carousel = null;
+    const slides = (s.images && s.images.length)
+      ? s.images
+      : (s.image ? [{ src: s.image, caption: s.caption || "" }] : []);
+    if (slides.length) {
       const fig = document.createElement("figure");
       fig.className = "col-img";
+      const wrap = document.createElement("div");
+      wrap.className = "car";
       const im = document.createElement("img");
-      im.className = "shot"; im.src = s.image; im.alt = s.caption || s.title || "";
-      fig.appendChild(im);
-      if (s.caption) {
-        const c = document.createElement("figcaption");
-        c.className = "shot-cap"; c.textContent = s.caption;
-        fig.appendChild(c);
+      im.className = "shot";
+      wrap.appendChild(im);
+      fig.appendChild(wrap);
+      const cap = document.createElement("figcaption");
+      cap.className = "shot-cap";
+      fig.appendChild(cap);
+
+      if (slides.length > 1) {
+        const count = document.createElement("div");
+        count.className = "car-count";
+        const dots = document.createElement("div");
+        dots.className = "car-dots";
+        slides.forEach((_, i) => {
+          const d = document.createElement("button");
+          d.className = "car-dot"; d.type = "button";
+          d.addEventListener("click", () => showSlide(i));
+          dots.appendChild(d);
+        });
+        const mk = (cls, txt, step) => {
+          const b = document.createElement("button");
+          b.className = "car-nav " + cls; b.type = "button"; b.textContent = txt;
+          b.addEventListener("click", () => showSlide(carousel.i + step));
+          return b;
+        };
+        wrap.appendChild(mk("prev", "◀", -1));
+        wrap.appendChild(mk("next", "▶", 1));
+        fig.insertBefore(count, cap.nextSibling);
+        fig.appendChild(dots);
+        carousel = { slides, i: 0, img: im, cap, dots, count, title: s.title || "" };
+      } else {
+        carousel = { slides, i: 0, img: im, cap, dots: null, count: null, title: s.title || "" };
       }
+      showSlide(0);
       body.appendChild(fig);
       col = document.createElement("div");
       col.className = "col-txt";

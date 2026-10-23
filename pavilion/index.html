@@ -162,6 +162,19 @@
   .dl.held{border-left-color:#6a5030; color:#8aa4bb; cursor:default}
   .dl.held .kind{background:#4a3a20; color:#d9c08a}
   .dl .why{display:block; font-size:12px; color:#6f8aa1; margin-top:3px}
+  /* карусель слайдов */
+  .car{position:relative}
+  .car-nav{position:absolute; top:0; bottom:0; width:46px; display:flex; align-items:center;
+    justify-content:center; border:none; background:linear-gradient(90deg, rgba(7,16,26,.75), rgba(7,16,26,0));
+    color:var(--paper); font-size:22px; cursor:pointer; font-family:var(--mono); opacity:.55; transition:opacity .15s}
+  .car-nav:hover{opacity:1}
+  .car-nav.next{right:0; background:linear-gradient(270deg, rgba(7,16,26,.75), rgba(7,16,26,0))}
+  .car-nav.prev{left:0}
+  .car-dots{display:flex; gap:6px; justify-content:center; margin:-4px 0 12px}
+  .car-dot{width:8px; height:8px; background:#27455c; border:none; padding:0; cursor:pointer}
+  .car-dot.on{background:var(--amber)}
+  .car-count{font-family:var(--mono); font-size:10px; letter-spacing:.16em; color:#5f7b93;
+    text-align:center; margin:-6px 0 10px}
   a.dl.video{border-left-color:#e0674a}
   a.dl.video .kind{background:#e0674a; color:#1a0d08}
   a.dl.video:hover{border-color:#e0674a}

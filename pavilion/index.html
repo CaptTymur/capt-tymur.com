@@ -36,6 +36,9 @@
   .hud-top{position:absolute; left:0; right:0; top:0; display:flex; justify-content:space-between;
     align-items:flex-start; padding:14px 16px; gap:12px}
   .hud-right{display:flex; align-items:flex-start; gap:8px}
+  .hud-left{display:flex; align-items:flex-start; gap:8px}
+  .plate.guest{border-top-color:#7fb069}
+  .plate.guest small{color:#9fd4a8; letter-spacing:.1em; font-size:11px; text-transform:none}
   .plate{background:rgba(8,18,28,.82); border:1px solid var(--line); border-top:2px solid var(--amber);
     padding:6px 10px 7px; font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:var(--paper)}
   .plate small{display:block; font-size:9px; letter-spacing:.18em; color:var(--muted); margin-top:3px}
@@ -134,6 +137,18 @@
   .draft{font-family:var(--mono); font-size:9px; letter-spacing:.18em; text-transform:uppercase;
     color:#6f8aa1; border:1px solid #23415a; padding:4px 8px}
   .shot{display:block; width:100%; margin:0 0 16px; border:1px solid var(--line-2); background:#0a141d}
+  .dl-h{font-family:var(--mono); font-size:10px; letter-spacing:.26em; text-transform:uppercase;
+    color:var(--amber); margin:22px 0 10px}
+  .dl{display:flex; align-items:center; gap:12px; padding:11px 13px; margin-bottom:8px;
+    background:#0b1724; border:1px solid var(--line-2); border-left:2px solid var(--teal);
+    color:var(--paper); text-decoration:none; font-size:14px; line-height:1.45}
+  a.dl:hover{border-color:var(--teal); background:#0e2130}
+  .dl .kind{font-family:var(--mono); font-size:9px; letter-spacing:.14em; color:#0b1724;
+    background:var(--teal); padding:4px 7px; flex:0 0 auto}
+  .dl .arrow{margin-left:auto; font-family:var(--mono); color:var(--muted); flex:0 0 auto}
+  .dl.held{border-left-color:#6a5030; color:#8aa4bb; cursor:default}
+  .dl.held .kind{background:#4a3a20; color:#d9c08a}
+  .dl .why{display:block; font-size:12px; color:#6f8aa1; margin-top:3px}
   .shot-cap{font-size:12px; color:var(--muted); margin:-10px 0 16px; line-height:1.5}
 
   /* ── редактор ──────────────────────────────────────── */
@@ -173,7 +188,10 @@
   <canvas id="screen" width="384" height="216"></canvas>
   <div id="overlay">
     <div class="hud-top">
-      <div class="plate" id="hud-where">Вестибюль<small>Skipi Education</small></div>
+      <div class="hud-left">
+        <div class="plate" id="hud-where">Вестибюль<small>Skipi Education</small></div>
+        <div class="plate guest" id="hud-guest" hidden>Слушатель<small id="hud-guest-name">—</small></div>
+      </div>
       <div class="hud-right">
         <button class="tool add" id="btn-add" hidden>+ стенд</button>
         <button class="tool" id="btn-data" hidden>данные</button>
@@ -317,6 +335,7 @@
 <input type="file" id="file-img" accept="image/*" hidden>
 <input type="file" id="file-json" accept="application/json,.json" hidden>
 
+<script src="content/guests.js"></script>
 <script src="content/communication.js"></script>
 <script src="game.js"></script>
 </body>

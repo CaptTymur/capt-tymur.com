@@ -166,7 +166,20 @@
   /* ═══ модель ══════════════════════════════════════════════════════════ */
   const SEED = window.SKIPI_PAVILION || { id: "pavilion", title: "Павильон", subtitle: "", stands: [] };
   const PID = SEED.id;
-  const SEEN_KEY = "skipi-edu/" + PID + "/seen";
+
+  // Персональная ссылка: ?g=<ключ из content/guests.js>.
+  // Гость читает павильон и не видит редактора. Без параметра — автор.
+  const GUESTS = window.SKIPI_GUESTS || {};
+  const GUEST = (() => {
+    let key = "";
+    try { key = (new URLSearchParams(location.search).get("g") || "").trim().toLowerCase(); }
+    catch (e) { key = ""; }
+    if (!key || !Object.prototype.hasOwnProperty.call(GUESTS, key)) return null;
+    const g = GUESTS[key] || {};
+    return { id: key, name: g.name || key, role: g.role === "captain" ? "captain" : "cadet", note: g.note || "" };
+  })();
+  const SUIT = GUEST ? GUEST.role : "captain";
+  const SEEN_KEY = "skipi-edu/" + PID + "/seen" + (GUEST ? "/" + GUEST.id : "");
 
   let stands = [];
   let CORRIDOR_W = 900, EXIT_X = 780;
@@ -187,8 +200,16 @@
       pointsTitle: raw.pointsTitle || "",
       points: Array.isArray(raw.points) ? raw.points.slice() : [],
       note: raw.note || "",
-      image: raw.image || null,          // dataURL
+      image: raw.image || null,          // dataURL либо путь к файлу
       caption: raw.caption || "",
+      downloads: Array.isArray(raw.downloads)
+        ? raw.downloads.filter((d) => d && d.file).map((d) => ({
+            label: String(d.label || d.file),
+            file: String(d.file),
+            hold: !!d.hold,
+            holdWhy: d.holdWhy ? String(d.holdWhy) : ""
+          }))
+        : [],
       draft: !!raw.draft,
       custom: !!raw.custom
     };
@@ -207,7 +228,7 @@
     const plain = stands.map((s) => ({
       id: s.id, short: s.short, icon: s.icon, accent: s.accent, title: s.title, lead: s.lead,
       body: s.body, pointsTitle: s.pointsTitle, points: s.points, note: s.note,
-      image: s.image, caption: s.caption, draft: s.draft, custom: s.custom
+      image: s.image, caption: s.caption, downloads: s.downloads, draft: s.draft, custom: s.custom
     }));
     await storeSet(PID, { version: 1, savedAt: new Date().toISOString(), stands: plain });
   }
@@ -417,16 +438,51 @@
       n.textContent = "Стенд пока пустой. Нажмите «Править стенд» — и положите на него изображение или текст.";
       body.appendChild(n);
     }
+    renderDownloads(body, s);
     $("card-note").textContent = s.note || "";
     $("card-note").hidden = !s.note;
     $("card-draft").hidden = !s.draft;
     const next = stands[s.index + 1];
     $("card-next").textContent = next ? "К стенду «" + next.short + "» →" : "К выходу →";
-    $("card-edit").hidden = false;
+    $("card-edit").hidden = !!GUEST;            // слушателю править нечего
     sheetCard.querySelector(".card").style.borderTopColor = s.accent;
     openSheet(sheetCard);
     markSeen(s.id);
     syncChrome();
+  }
+
+  // Файлы на стенде. Запись с hold:true не отдаётся: файл не выложен наружу,
+  // и честнее показать это строкой, чем дать ссылку в никуда.
+  function renderDownloads(body, s) {
+    const list = s.downloads || [];
+    if (!list.length) return;
+    const h = document.createElement("div");
+    h.className = "dl-h"; h.style.color = s.accent; h.textContent = "Скачать";
+    body.appendChild(h);
+    list.forEach((d) => {
+      const kind = (d.file.split(".").pop() || "файл").toUpperCase().slice(0, 5);
+      const row = document.createElement(d.hold ? "div" : "a");
+      row.className = "dl" + (d.hold ? " held" : "");
+      if (!d.hold) {
+        row.href = d.file;
+        row.setAttribute("download", "");
+        row.rel = "noopener";
+      }
+      const k = document.createElement("span");
+      k.className = "kind"; k.textContent = kind;
+      const txt = document.createElement("span");
+      txt.textContent = d.label;
+      if (d.hold) {
+        const why = document.createElement("span");
+        why.className = "why";
+        why.textContent = d.holdWhy || "файл пока не выложен";
+        txt.appendChild(why);
+      }
+      const a = document.createElement("span");
+      a.className = "arrow"; a.textContent = d.hold ? "—" : "↓";
+      row.appendChild(k); row.appendChild(txt); row.appendChild(a);
+      body.appendChild(row);
+    });
   }
 
   function openFinal() {
@@ -464,6 +520,7 @@
     game.autoOpen = next ? next.id : null;
   });
   $("card-edit").addEventListener("click", () => { closeSheet(sheetCard); if (currentStand) openEditor(currentStand); });
+
 
   /* ═══ редактор стенда ═════════════════════════════════════════════════ */
   let editing = null, edImage = null;
@@ -711,8 +768,8 @@
     const corridor = game.scene === "corridor";
     elCount.hidden = !corridor;
     elRail.hidden = !corridor;
-    btnAdd.hidden = !corridor;
-    btnData.hidden = !corridor;
+    btnAdd.hidden = !corridor || !!GUEST;
+    btnData.hidden = !corridor || !!GUEST;
     elWhere.innerHTML = corridor
       ? esc(SEED.title) + "<small>" + esc(SEED.subtitle || "Skipi Education") + "</small>"
       : "Вестибюль<small>Skipi Education</small>";
@@ -727,6 +784,21 @@
 
   /* ═══ титул ═══════════════════════════════════════════════════════════ */
   // имя павильона берётся из файла содержания, а не зашито в разметку
+  (function guestChrome() {
+    if (!GUEST) return;
+    const plate = $("hud-guest"), nm = $("hud-guest-name");
+    if (plate && nm) {
+      plate.hidden = false;
+      plate.firstChild.textContent = GUEST.role === "captain" ? "Капитан" : "Слушатель";
+      nm.textContent = GUEST.name;
+    }
+    const note = document.querySelector("#title .title-note");
+    if (note) {
+      note.textContent = GUEST.name + ", это ваш персональный вход. Вы заходите в павильон и идёте "
+        + "по коридору; вдоль коридора — стенды. Подойдите к стенду и откройте его. Регистрации нет.";
+    }
+  })();
+
   (function nameFromContent() {
     const main = document.querySelector("#title .title-main");
     const sub = document.querySelector("#title .title-sub");
@@ -947,6 +1019,12 @@
     px(sx - w / 2, base - plate, w, plate, C.standBody2);
     px(sx - w / 2, base - plate, w, 1, "#aab9c5");
     text(String(s.index + 1).padStart(2, "0"), sx - w / 2 + R(6), base - plate + R(2), R(8), "#4a5c69", "left");
+    if (s.downloads && s.downloads.length) {       // на стенде есть файл
+      const mx = sx + w / 2 - R(30), my = base - plate + R(2);
+      px(mx, my, R(9), R(8), "#3a5a70");
+      px(mx + R(4), my + R(1), 1, R(4), "#dbe7ef");
+      px(mx + R(2), my + R(4), R(5), 1, "#dbe7ef");
+    }
     if (seen.has(s.id)) {
       px(sx + w / 2 - R(16), base - plate + R(2), R(10), R(8), "#2f8f63");
       px(sx + w / 2 - R(13), base - plate + R(6), R(2), R(2), "#d9f5e6");
@@ -974,15 +1052,28 @@
     }
   }
 
-  /* ═══ человечек: капитан в чёрном кителе, без фуражки ═══════════════ */
+  /* ═══ человечек ═══════════════════════════════════════════════════════
+     Два вида: капитан (чёрный китель, погоны, четыре нашивки) и слушатель
+     (синий китель, одна нашивка, без погон). Кто именно — решает ссылка. */
+  const SUITS = {
+    captain: {
+      jkt: "#1b2130", jktS: "#11161f", rim: "#38465e", tie: "#0a0d12",
+      hair: "#2b2119", trou: "#161b25", trouS: "#0e121a",
+      stripes: 4, boards: true
+    },
+    cadet: {
+      jkt: "#23344d", jktS: "#182538", rim: "#46618a", tie: "#132235",
+      hair: "#59402a", trou: "#1c2a3d", trouS: "#131d2b",
+      stripes: 1, boards: false
+    }
+  };
   const P = {
-    out: "#05070a", jkt: "#1b2130", jktS: "#11161f", rim: "#38465e",
-    gold: "#e3b457", gold2: "#a9823a", shirt: "#eef3f8", tie: "#0a0d12",
-    skin: "#e3ab80", skinS: "#bd8657", hair: "#2b2119",
-    trou: "#161b25", trouS: "#0e121a", shoe: "#090b0f"
+    out: "#05070a", gold: "#e3b457", gold2: "#a9823a", shirt: "#eef3f8",
+    skin: "#e3ab80", skinS: "#bd8657", shoe: "#090b0f"
   };
 
   function drawPlayer(sx, dir, phase, moving, t) {
+    const S = SUITS[SUIT] || SUITS.captain;
     const sw = moving ? [[-5, 5], [0, 0], [5, -5], [0, 0]][phase] : [0, 0];
     const lift = moving ? [0, 1, 0, 1][phase] : 0;
     const bob = moving ? [0, 1, 0, 1][phase] : (Math.sin(t / 640) > 0.6 ? 1 : 0);
@@ -996,7 +1087,7 @@
     [0, 1].forEach((i) => {
       const lx = x + (i === 0 ? -11 : 2) + sw[i] * dir;
       px(lx - 1, Y(25), 11, 21, P.out);
-      px(lx, Y(24), 9, 19, i === 0 ? P.trou : P.trouS);
+      px(lx, Y(24), 9, 19, i === 0 ? S.trou : S.trouS);
       const sh = lx - 2 + (f ? 2 : -2);
       px(sh, Y(6) - lift, 13, 6, P.out);
       px(sh + 1, Y(5) - lift, 11, 4, P.shoe);
@@ -1004,33 +1095,35 @@
 
     // китель
     px(x - 15, Y(47), 30, 28, P.out);
-    px(x - 14, Y(46), 28, 26, P.jkt);
-    px(x + (f ? 5 : -14), Y(46), 9, 26, P.jktS);
-    px(x + (f ? -14 : 13), Y(45), 1, 24, P.rim);          // блик от светильника
+    px(x - 14, Y(46), 28, 26, S.jkt);
+    px(x + (f ? 5 : -14), Y(46), 9, 26, S.jktS);
+    px(x + (f ? -14 : 13), Y(45), 1, 24, S.rim);          // блик от светильника
     px(x - 14, Y(21), 28, 2, P.out);                       // низ кителя
     // сорочка, лацканы, галстук
     px(x - 6, Y(47), 12, 9, P.shirt);
-    px(x - 11, Y(47), 6, 10, P.jkt);
-    px(x + 5, Y(47), 6, 10, P.jkt);
+    px(x - 11, Y(47), 6, 10, S.jkt);
+    px(x + 5, Y(47), 6, 10, S.jkt);
     px(x - 11, Y(47), 1, 10, P.out);
     px(x + 10, Y(47), 1, 10, P.out);
-    px(x - 2, Y(45), 4, 9, P.tie);
+    px(x - 2, Y(45), 4, 9, S.tie);
     // пуговицы в два ряда
     [40, 34, 28].forEach((up) => {
-      px(x - 8, Y(up), 2, 2, P.gold);
-      px(x + 6, Y(up), 2, 2, P.gold);
+      if (S.boards) { px(x - 8, Y(up), 2, 2, P.gold); px(x + 6, Y(up), 2, 2, P.gold); }
+      else px(x - 1, Y(up), 2, 2, P.gold2);
     });
-    // погоны
-    px(x - 15, Y(47), 7, 3, P.gold2); px(x + 8, Y(47), 7, 3, P.gold2);
-    px(x - 15, Y(47), 7, 1, P.gold);   px(x + 8, Y(47), 7, 1, P.gold);
+    // погоны — только у капитана
+    if (S.boards) {
+      px(x - 15, Y(47), 7, 3, P.gold2); px(x + 8, Y(47), 7, 3, P.gold2);
+      px(x - 15, Y(47), 7, 1, P.gold);   px(x + 8, Y(47), 7, 1, P.gold);
+    }
 
     // руки, на обшлагах четыре нашивки
     [0, 1].forEach((i) => {
       const off = Math.round(-sw[i] * dir * 0.6);
       const ax = i === 0 ? x - 21 : x + 13;
       px(ax, Y(45) + off, 8, 24, P.out);
-      px(ax + 1, Y(44) + off, 6, 22, i === 0 ? P.jkt : P.jktS);
-      for (let k = 0; k < 4; k++) px(ax + 1, Y(31 - k * 3) + off, 6, 2, P.gold);
+      px(ax + 1, Y(44) + off, 6, 22, i === 0 ? S.jkt : S.jktS);
+      for (let k = 0; k < S.stripes; k++) px(ax + 1, Y(31 - k * 3) + off, 6, 2, P.gold);
       px(ax + 1, Y(22) + off, 6, 4, P.skin);
     });
 
@@ -1041,13 +1134,13 @@
     px(x + (f ? 2 : -8), Y(62), 6, 16, P.skinS);
     px(x + (f ? 1 : -3), Y(56), 2, 2, "#141a22");
     px(x + (f ? -4 : 2), Y(56), 2, 2, "#141a22");
-    px(x - 5, Y(59), 10, 1, P.hair);
+    px(x - 5, Y(59), 10, 1, S.hair);
     px(x - 2, Y(51), 4, 1, P.skinS);
     // волосы, фуражки нет
-    px(x - 9, Y(68), 18, 6, P.hair);
-    px(x - 10, Y(64), 2, 5, P.hair);
-    px(x + 8, Y(64), 2, 5, P.hair);
-    px(x + (f ? -9 : 3), Y(63), 6, 2, P.hair);
+    px(x - 9, Y(68), 18, 6, S.hair);
+    px(x - 10, Y(64), 2, 5, S.hair);
+    px(x + 8, Y(64), 2, 5, S.hair);
+    px(x + (f ? -9 : 3), Y(63), 6, 2, S.hair);
   }
 
   /* ═══ цикл ════════════════════════════════════════════════════════════ */

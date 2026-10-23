@@ -5,23 +5,65 @@
 (() => {
   "use strict";
 
-  /* ═══ экран ═══════════════════════════════════════════════════════════ */
-  const VW = 384, VH = 216, FLOOR_Y = 186, CEIL_H = 36;
+  /* ═══ экран ═══════════════════════════════════════════════════════════
+     Кадр не фиксирован: под окно подбирается целое увеличение пикселя, а
+     внутреннее разрешение берётся такое, чтобы холст занял всё окно целиком.
+     Чем больше окно, тем больше коридора видно и тем мельче игровой пиксель. */
+  let VW = 480, VH = 286;                 // внутреннее разрешение, считается в resize
+  let FLOOR_Y = 246, CEIL_H = 48, U = 1;  // U — во сколько раз сцена крупнее исходной
+  const G = {};                           // производные размеры сцены
   const MONO = 'ui-monospace, "SF Mono", Menlo, Consolas, monospace';
-  const GAP = 240, FIRST_X = 300, ENTRY_X = 80;
+  let GAP = 317, FIRST_X = 396, ENTRY_X = 106;   // пересчитываются в resize
+  let HUB_W = 1478;
+  const DOOR_BASE = [360, 620, 880];
+  const DOORS = [];                       // заполняется, когда известно имя павильона
+  const PH = 68;                          // рост человечка в игровых пикселях
 
   const cv = document.getElementById("screen");
   const ctx = cv.getContext("2d", { alpha: false });
   let scale = 3;
 
   function resize() {
-    const pad = window.innerWidth < 700 ? 0 : 24;
-    const raw = Math.min((window.innerWidth - pad) / VW, (window.innerHeight - pad) / VH);
-    // на большом экране — целое увеличение, пиксель в пиксель;
-    // на телефоне целое дало бы узкую полоску, поэтому там дробное
-    scale = raw >= 2 ? Math.floor(raw) : Math.max(0.6, raw);
-    cv.style.width = Math.round(VW * scale) + "px";
-    cv.style.height = Math.round(VH * scale) + "px";
+    const w = Math.max(320, window.innerWidth);
+    const h = Math.max(240, window.innerHeight);
+    let s = Math.max(1, Math.round(h / 290));
+    for (let guard = 0; guard < 16; guard++) {
+      const vw = Math.floor(w / s), vh = Math.floor(h / s);
+      if (s > 1 && (vw < 420 || vh < 240)) { s--; continue; }
+      if (vw > 900) { s++; continue; }
+      break;
+    }
+    scale = s;
+    VW = Math.min(900, Math.floor(w / s));
+    VH = Math.min(320, Math.floor(h / s), Math.round(VW * 0.68));
+    cv.width = VW; cv.height = VH;
+    cv.style.width = VW * s + "px";
+    cv.style.height = VH * s + "px";
+
+    FLOOR_Y = Math.round(VH * 0.861);     // линия пола, по ней идут ноги
+    U = FLOOR_Y / 186;                    // исходная сцена была сделана при FLOOR_Y = 186
+    const R = (v) => Math.round(v * U);
+    CEIL_H = R(36);
+    G.R = R;
+    G.ductY = R(8); G.ductH = R(11); G.cableY = R(23);
+    G.trayY = R(42); G.trayH = Math.max(2, R(3)); G.trayDotY = R(40); G.trayLineY = R(48);
+    G.skirtH = R(12);
+    G.floorTop = FLOOR_Y - R(8);
+    G.laneY = FLOOR_Y + R(8); G.laneH = R(14);
+    G.lampStep = R(120); G.hubLampStep = R(240);
+    G.standFoot = FLOOR_Y - R(8);
+    // низ щита всегда выше макушки, поэтому человечек не закрывает содержание
+    G.standBase = FLOOR_Y - PH - R(8);
+    G.standTop = Math.max(CEIL_H + R(14), G.standBase - R(76));
+    G.standH = G.standBase - G.standTop;
+    G.standW = Math.round(G.standH * 0.82);
+    G.portY = Math.round((G.standTop + G.standBase) / 2); G.portR = R(13);
+    G.doorwayW = R(58); G.doorwayH = R(96);
+    G.doorW = R(76); G.doorH = R(112);
+    G.reach = R(52);
+    GAP = R(240); FIRST_X = R(300); ENTRY_X = R(80);
+    HUB_W = R(1120);
+    DOORS.forEach((d) => { d.x = R(d.base); });
   }
   resize();
 
@@ -140,8 +182,8 @@
   function relayout() {
     stands.forEach((s, i) => { s.index = i; s.x = FIRST_X + i * GAP; });
     const last = stands.length ? stands[stands.length - 1].x : FIRST_X - GAP;
-    CORRIDOR_W = Math.max(760, last + 300);
-    EXIT_X = CORRIDOR_W - 120;
+    CORRIDOR_W = Math.max(Math.round(760 * U), last + Math.round(300 * U));
+    EXIT_X = CORRIDOR_W - Math.round(120 * U);
     buildRail();
     syncChrome();
   }
@@ -209,14 +251,13 @@
   }
 
   /* ═══ состояние игры ══════════════════════════════════════════════════ */
-  const HUB_W = 1120;
-  const DOORS = [
-    { x: 360, label: (SEED.title || "ПАВИЛЬОН").toUpperCase(), open: true },
-    { x: 620, label: "СКОРО", open: false },
-    { x: 880, label: "СКОРО", open: false }
-  ];
+  DOOR_BASE.forEach((base, i) => DOORS.push({
+    base, x: Math.round(base * U),
+    label: i === 0 ? (SEED.title || "ПАВИЛЬОН").toUpperCase() : "СКОРО",
+    open: i === 0
+  }));
   const game = {
-    scene: "hub", x: 170, facing: 1, walkPhase: 0, moving: false,
+    scene: "hub", x: Math.round(170 * U), facing: 1, walkPhase: 0, moving: false,
     cam: 0, fade: 1, fadeDir: -1, fadeThen: null,
     autoTarget: null, autoOpen: null, focus: null
   };
@@ -274,19 +315,20 @@
     const wy = (e.clientY - r.top) / scale;
     game.autoOpen = null;
     if (game.scene === "corridor") {
-      const hit = stands.find((s) => Math.abs(s.x - wx) < 34 && wy > 98 && wy < 182);
+      const hit = stands.find((s) => Math.abs(s.x - wx) < G.standW / 2 &&
+        wy > G.standTop - 6 && wy < G.standFoot);
       if (hit) { game.autoTarget = hit.x; game.autoOpen = hit.id; return; }
     }
     game.autoTarget = clamp(wx, 40, worldWidth() - 40);
   });
 
   /* ═══ что под рукой ═══════════════════════════════════════════════════ */
-  const REACH = 52;
   function computeFocus() {
     let best = null;
+    const reach = G.reach || 52;
     const near = (kind, x, extra) => {
       const d = Math.abs(x - game.x);
-      if (d < REACH && (!best || d < best.dist)) best = Object.assign({ kind, dist: d }, extra || {});
+      if (d < reach && (!best || d < best.dist)) best = Object.assign({ kind, dist: d }, extra || {});
     };
     if (game.scene === "hub") { DOORS.forEach((d) => near("door", d.x, { door: d })); return best; }
     stands.forEach((s) => near("stand", s.x, { stand: s }));
@@ -300,7 +342,7 @@
     if (uiOpen() || game.fadeDir === 1) return;
     const f = game.focus;
     if (!f) return;
-    if (f.kind === "door") { f.door.open ? go("corridor", ENTRY_X + 40) : toast("Этот павильон ещё закрыт"); return; }
+    if (f.kind === "door") { f.door.open ? go("corridor", ENTRY_X + Math.round(40 * U)) : toast("Этот павильон ещё закрыт"); return; }
     if (f.kind === "entry") { go("hub", DOORS[0].x); return; }
     if (f.kind === "exit") { openFinal(); return; }
     openStand(f.stand);
@@ -502,7 +544,7 @@
     editing = null;
     closeSheet(sheetEd);
     save(); relayout();
-    game.x = clamp(stands.length ? stands[Math.min(i, stands.length - 1)].x : ENTRY_X + 40, 28, CORRIDOR_W - 28);
+    game.x = clamp(stands.length ? stands[Math.min(i, stands.length - 1)].x : ENTRY_X + Math.round(40 * U), 28, CORRIDOR_W - 28);
     toast("Стенд удалён");
   });
   $("ed-dup").addEventListener("click", () => {
@@ -689,33 +731,34 @@
   const disc = (x, y, r, c) => { ctx.fillStyle = c; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill(); };
 
   function drawHub() {
-    const cam = game.cam;
+    const cam = game.cam, R = G.R;
     px(0, 0, VW, VH, "#0a1824");
     px(0, 0, VW, CEIL_H, C.ceil);
-    for (let x = -(cam % 64); x < VW; x += 64) px(x, 0, 2, CEIL_H, C.ceilRib);
-    px(0, 10, VW, 9, "#132536");
-    px(0, 10, VW, 1, "#1d3e55");
-    px(0, 19, VW, 1, "#07111a");
+    for (let x = -(cam % R(64)); x < VW; x += R(64)) px(x, 0, 2, CEIL_H, C.ceilRib);
+    px(0, G.ductY, VW, G.ductH, "#132536");
+    px(0, G.ductY, VW, 1, "#1d3e55");
+    px(0, G.ductY + G.ductH, VW, 1, "#07111a");
     px(0, CEIL_H - 2, VW, 2, "#13293a");
-    for (let wx = 120; wx < HUB_W; wx += 240) {
+    for (let wx = R(120); wx < HUB_W; wx += G.hubLampStep) {
       const sx = wx - cam;
-      if (sx < -40 || sx > VW + 40) continue;
-      px(sx - 1, 19, 2, CEIL_H - 25, "#17303f");
-      px(sx - 16, CEIL_H - 6, 32, 4, C.lampBox);
-      px(sx - 13, CEIL_H - 4, 26, 2, C.lampLit);
-      glow(sx, CEIL_H, 54, 0.1);
+      if (sx < -70 || sx > VW + 70) continue;
+      px(sx - 1, G.ductY + G.ductH, 2, CEIL_H - G.ductY - G.ductH - R(6), "#17303f");
+      px(sx - R(16), CEIL_H - R(6), R(32), R(4), C.lampBox);
+      px(sx - R(13), CEIL_H - R(4), R(26), Math.max(2, R(2)), C.lampLit);
+      glow(sx, CEIL_H, R(54), 0.1);
     }
     px(0, CEIL_H, VW, FLOOR_Y - CEIL_H, C.wallA);
-    for (let x = -(cam % 48); x < VW; x += 48) px(x, CEIL_H, 1, FLOOR_Y - CEIL_H, C.wallSeam);
-    px(0, 62, VW, 2, C.wallTrim);
-    px(0, FLOOR_Y - 10, VW, 10, C.skirt);
-    const sign = 60 - cam;
-    if (sign > -240 && sign < VW + 60) {
-      px(sign - 2, 68, 216, 44, "#0b1b27");
-      px(sign, 70, 212, 40, "#102636");
-      px(sign, 70, 212, 2, C.amber);
-      text("SKIPI", sign + 106, 77, 13, C.paper, "center");
-      text("EDUCATION", sign + 106, 93, 9, C.teal, "center");
+    for (let x = -(cam % R(48)); x < VW; x += R(48)) px(x, CEIL_H, 1, FLOOR_Y - CEIL_H, C.wallSeam);
+    px(0, R(62), VW, 2, C.wallTrim);
+    px(0, FLOOR_Y - R(10), VW, R(10), C.skirt);
+
+    const sw = R(216), sh = R(44), sy = R(68), sx0 = R(60) - cam;
+    if (sx0 > -sw - 40 && sx0 < VW + 60) {
+      px(sx0 - 2, sy - 2, sw + 4, sh + 4, "#0b1b27");
+      px(sx0, sy, sw, sh, "#102636");
+      px(sx0, sy, sw, 2, C.amber);
+      text("SKIPI", sx0 + sw / 2, sy + R(7), R(13), C.paper, "center");
+      text("EDUCATION", sx0 + sw / 2, sy + R(24), R(9), C.teal, "center");
     }
     const all = stands.length > 0 && stands.every((s) => seen.has(s.id));
     DOORS.forEach((d, i) => drawDoor(d.x - cam, d.label, d.open, i === 0 && all));
@@ -723,81 +766,82 @@
   }
 
   function drawDoor(sx, label, open, done) {
-    if (sx < -90 || sx > VW + 90) return;
-    const w = 76, h = 112, top = FLOOR_Y - 8 - h, bot = FLOOR_Y - 8;
-    const ix = sx - w / 2;
-    px(ix - 4, top - 4, w + 8, h + 4, "#0b1620");
+    const R = G.R, w = G.doorW, h = G.doorH;
+    if (sx < -w - 40 || sx > VW + w + 40) return;
+    const top = FLOOR_Y - R(8) - h, bot = FLOOR_Y - R(8), ix = sx - w / 2;
+    px(ix - R(4), top - R(4), w + R(8), h + R(4), "#0b1620");
     px(ix - 2, top - 2, w + 4, h + 2, "#1d3c4c");
     if (open) {
       px(ix, top, w, h, "#15293a");
-      px(ix + 6, top + 6, w - 12, h - 12, "#1d3b4d");       // дальняя переборка
-      px(ix + 6, top + 6, w - 12, 3, C.lampLit);            // лампа над проёмом
-      glow(sx, top + 12, 48, 0.20);
-      px(ix + 17, top + 22, w - 34, h - 36, "#0d1f2b");     // уходящий вглубь коридор
-      px(ix + 17, top + 22, w - 34, 2, "#2a5468");
-      px(ix + 6, bot - 12, w - 12, 12, "#24404f");          // пол за дверью
-      px(ix + 6, bot - 12, w - 12, 1, "#3d6b80");
-      px(ix, bot - 3, w, 3, "#8a7446");                     // комингс
+      px(ix + R(6), top + R(6), w - R(12), h - R(12), "#1d3b4d");
+      px(ix + R(6), top + R(6), w - R(12), R(3), C.lampLit);
+      glow(sx, top + R(12), R(48), 0.20);
+      px(ix + R(17), top + R(22), w - R(34), h - R(36), "#0d1f2b");
+      px(ix + R(17), top + R(22), w - R(34), 2, "#2a5468");
+      px(ix + R(6), bot - R(12), w - R(12), R(12), "#24404f");
+      px(ix + R(6), bot - R(12), w - R(12), 1, "#3d6b80");
+      px(ix, bot - R(3), w, R(3), "#8a7446");
       ctx.fillStyle = "rgba(255,214,140,0.09)";
-      ctx.fillRect((sx - 40) | 0, bot, 80, 24);             // свет на палубу
+      ctx.fillRect((sx - R(40)) | 0, bot, R(80), R(24));
     } else {
       px(ix, top, w, h, "#102029");
-      for (let y = top + 10; y < bot - 12; y += 9) px(ix + 8, y, w - 16, 3, "#15293a");
-      px(ix + 8, top + 10, w - 16, 1, "#1b3647");
-      px(ix, bot - 3, w, 3, "#1a2b36");
+      for (let y = top + R(10); y < bot - R(12); y += R(9)) px(ix + R(8), y, w - R(16), Math.max(2, R(3)), "#15293a");
+      px(ix + R(8), top + R(10), w - R(16), 1, "#1b3647");
+      px(ix, bot - R(3), w, R(3), "#1a2b36");
     }
-    px(sx - 48, top - 22, 96, 16, "#0a1824");
-    px(sx - 48, top - 22, 96, 2, open ? C.amber : "#24404f");
-    text(label, sx, top - 17, 8, open ? C.paper : "#55738a", "center");
-    px(sx + 41, top - 18, 4, 4, open ? "#6ee7a8" : "#6a3030");
-    if (done) { px(sx - 46, top - 19, 7, 7, "#6ee7a8"); px(sx - 44, top - 16, 2, 2, "#0a1824"); }
+    const pw = R(96), ph = R(16), py = top - R(22);
+    px(sx - pw / 2, py, pw, ph, "#0a1824");
+    px(sx - pw / 2, py, pw, 2, open ? C.amber : "#24404f");
+    text(label, sx, py + R(5), R(8), open ? C.paper : "#55738a", "center");
+    px(sx + pw / 2 - R(7), py + R(4), R(4), R(4), open ? "#6ee7a8" : "#6a3030");
+    if (done) {
+      px(sx - pw / 2 + R(2), py + R(3), R(7), R(7), "#6ee7a8");
+      px(sx - pw / 2 + R(4), py + R(6), R(2), R(2), "#0a1824");
+    }
   }
 
   function drawCorridor() {
-    const cam = game.cam;
+    const cam = game.cam, R = G.R;
     px(0, 0, VW, VH, C.wallB);
     px(0, 0, VW, CEIL_H, C.ceil);
-    for (let x = -(cam % 32); x < VW; x += 32) px(x, 0, 2, CEIL_H - 4, C.ceilRib);
-    // воздуховод под подволоком
-    px(0, 8, VW, 11, "#132536");
-    px(0, 8, VW, 1, "#1d3e55");
-    px(0, 18, VW, 1, "#07111a");
-    for (let x = -(cam % 44); x < VW; x += 44) px(x, 8, 2, 11, "#0d1c29");
-    // кабельная нитка вдоль потолка
-    px(0, 23, VW, 1, "#16303f");
-    px(0, CEIL_H - 3, VW, 3, "#14293a");
-    for (let wx = 60; wx < CORRIDOR_W; wx += 120) {
+    for (let x = -(cam % R(32)); x < VW; x += R(32)) px(x, 0, 2, CEIL_H - R(4), C.ceilRib);
+    px(0, G.ductY, VW, G.ductH, "#132536");
+    px(0, G.ductY, VW, 1, "#1d3e55");
+    px(0, G.ductY + G.ductH, VW, 1, "#07111a");
+    for (let x = -(cam % R(44)); x < VW; x += R(44)) px(x, G.ductY, 2, G.ductH, "#0d1c29");
+    px(0, G.cableY, VW, 1, "#16303f");
+    px(0, CEIL_H - R(3), VW, R(3), "#14293a");
+    for (let wx = R(60); wx < CORRIDOR_W; wx += G.lampStep) {
       const sx = wx - cam;
-      if (sx < -60 || sx > VW + 60) continue;
-      px(sx - 1, 19, 2, CEIL_H - 26, "#17303f");          // подвес
-      px(sx - 20, CEIL_H - 7, 40, 5, C.lampBox);
-      px(sx - 17, CEIL_H - 5, 34, 2, C.lampLit);
-      glow(sx, CEIL_H - 2, 70, 0.13);
+      if (sx < -70 || sx > VW + 70) continue;
+      px(sx - 1, G.ductY + G.ductH, 2, CEIL_H - G.ductY - G.ductH - R(7), "#17303f");
+      px(sx - R(20), CEIL_H - R(7), R(40), R(5), C.lampBox);
+      px(sx - R(17), CEIL_H - R(5), R(34), Math.max(2, R(2)), C.lampLit);
+      glow(sx, CEIL_H - 2, R(70), 0.13);
       ctx.fillStyle = "rgba(255,214,140,0.05)";
-      ctx.fillRect((sx - 30) | 0, 24, 60, 8);
+      ctx.fillRect((sx - R(30)) | 0, G.cableY + 1, R(60), R(8));
     }
     px(0, CEIL_H, VW, FLOOR_Y - CEIL_H, C.wallA);
-    for (let x = -(cam % 56); x < VW + 56; x += 56) {
-      px(x, CEIL_H, 28, FLOOR_Y - CEIL_H, C.wallB);
+    for (let x = -(cam % R(56)); x < VW + R(56); x += R(56)) {
+      px(x, CEIL_H, R(28), FLOOR_Y - CEIL_H, C.wallB);
       px(x, CEIL_H, 1, FLOOR_Y - CEIL_H, C.wallSeam);
     }
-    px(0, 42, VW, 3, "#1d4154");
-    for (let x = -(cam % 14); x < VW; x += 14) px(x, 40, 2, 2, "#2a5a70");
-    px(0, 48, VW, 1, "#0e2430");
-    for (let x = -(cam % 28); x < VW; x += 28) px(x, 150, 1, 1, "#2a5064");
-    px(0, FLOOR_Y - 12, VW, 12, C.skirt);
-    px(0, FLOOR_Y - 12, VW, 1, "#1e4458");
+    px(0, G.trayY, VW, G.trayH, "#1d4154");
+    for (let x = -(cam % R(14)); x < VW; x += R(14)) px(x, G.trayDotY, 2, 2, "#2a5a70");
+    px(0, G.trayLineY, VW, 1, "#0e2430");
+    px(0, FLOOR_Y - G.skirtH, VW, G.skirtH, C.skirt);
+    px(0, FLOOR_Y - G.skirtH, VW, 1, "#1e4458");
 
     for (let i = 0; i <= stands.length; i++) {
-      const wx = FIRST_X - 120 + i * GAP;
-      if (wx > CORRIDOR_W - 60 || wx < 40) continue;
+      const wx = FIRST_X - Math.round(GAP / 2) + i * GAP;
+      if (wx < R(40) || wx > CORRIDOR_W - R(60)) continue;
       const sx = wx - cam;
-      if (sx < -30 || sx > VW + 30) continue;
-      disc(sx, 92, 13, "#0c1f29");
-      disc(sx, 92, 11, "#23536a");
-      disc(sx, 92, 9, "#071722");
-      disc(sx - 3, 89, 3, "#0f3246");
-      px(sx - 11, 91, 22, 1, "#0a2430");
+      if (sx < -G.portR - 10 || sx > VW + G.portR + 10) continue;
+      disc(sx, G.portY, G.portR, "#0c1f29");
+      disc(sx, G.portY, G.portR - 2, "#23536a");
+      disc(sx, G.portY, G.portR - 4, "#071722");
+      disc(sx - R(3), G.portY - R(3), Math.max(2, R(3)), "#0f3246");
+      px(sx - G.portR + 2, G.portY - 1, G.portR * 2 - 4, 1, "#0a2430");
     }
 
     drawDoorway(ENTRY_X - cam, "ВЕСТИБЮЛЬ", "#4a9fd8");
@@ -807,24 +851,26 @@
   }
 
   function drawDoorway(sx, label, color) {
-    if (sx < -80 || sx > VW + 80) return;
-    const w = 58, h = 96, top = FLOOR_Y - 8 - h;
-    px(sx - w / 2 - 3, top - 3, w + 6, h + 3, C.doorFrame);
-    px(sx - w / 2, top, w, h, "#0a1821");
-    const g = ctx.createLinearGradient(0, top, 0, FLOOR_Y - 8);
+    const R = G.R, w = G.doorwayW, h = G.doorwayH;
+    if (sx < -w - 40 || sx > VW + w + 40) return;
+    const top = FLOOR_Y - R(8) - h, ix = sx - w / 2;
+    px(ix - R(3), top - R(3), w + R(6), h + R(3), "#0b1620");
+    px(ix, top, w, h, "#0a1821");
+    const g = ctx.createLinearGradient(0, top, 0, FLOOR_Y - R(8));
     g.addColorStop(0, "rgba(120,190,210,0.20)");
     g.addColorStop(1, "rgba(120,190,210,0.02)");
-    ctx.fillStyle = g; ctx.fillRect((sx - w / 2) | 0, top | 0, w, h - 8);
-    px(sx - w / 2, top, w, 2, color);
-    px(sx - 34, top - 18, 68, 14, "#0a1824");
-    px(sx - 34, top - 18, 68, 2, color);
-    text(label, sx, top - 13, 8, C.paper, "center");
+    ctx.fillStyle = g; ctx.fillRect(ix | 0, top | 0, w, h - R(8));
+    px(ix, top, w, 2, color);
+    const pw = R(68), ph = R(14), py = top - R(18);
+    px(sx - pw / 2, py, pw, ph, "#0a1824");
+    px(sx - pw / 2, py, pw, 2, color);
+    text(label, sx, py + R(4), R(8), C.paper, "center");
   }
 
   function drawStand(s, sx) {
-    if (sx < -70 || sx > VW + 70) return;
-    const w = 62, h = 76, top = 56, base = top + h;        // щит: 56..132
-    const foot = FLOOR_Y - 8;                              // пол у стены
+    const R = G.R, w = G.standW, h = G.standH;
+    if (sx < -w - 20 || sx > VW + w + 20) return;
+    const top = G.standTop, base = G.standBase, foot = G.standFoot;
     const near = game.focus && game.focus.kind === "stand" && game.focus.stand.id === s.id;
 
     if (near) {
@@ -833,25 +879,28 @@
       g.addColorStop(1, "rgba(255,214,140,0)");
       ctx.fillStyle = g;
       ctx.beginPath();
-      ctx.moveTo(sx - 10, CEIL_H); ctx.lineTo(sx + 10, CEIL_H);
-      ctx.lineTo(sx + w / 2 + 8, foot); ctx.lineTo(sx - w / 2 - 8, foot);
+      ctx.moveTo(sx - R(10), CEIL_H); ctx.lineTo(sx + R(10), CEIL_H);
+      ctx.lineTo(sx + w / 2 + R(8), foot); ctx.lineTo(sx - w / 2 - R(8), foot);
       ctx.closePath(); ctx.fill();
     }
-    // стойка и опорная плита
-    px(sx - 11, foot - 4, 22, 4, "#0d1d27");
-    px(sx - 9, foot - 3, 18, 2, "#17313f");
-    px(sx - 4, base - 2, 8, foot - base + 2, "#0d1d27");
-    px(sx - 3, base - 2, 3, foot - base + 2, "#1b394a");
+    // опорная плита и стойка
+    px(sx - R(14), foot - R(4), R(28), R(4), "#0d1d27");
+    px(sx - R(12), foot - R(3), R(24), 2, "#17313f");
+    px(sx - R(5), base - 2, R(10), foot - base + 2, "#0d1d27");
+    px(sx - R(4), base - 2, R(4), foot - base + 2, "#1b394a");
     // светильник над щитом
-    px(sx - 7, top - 8, 14, 4, "#1a2e3c");
-    px(sx - 5, top - 5, 10, 2, near ? "#ffe3a8" : "#6b5c3a");
-    px(sx - w / 2 + 3, top + 3, w, h, "rgba(0,0,0,0.30)");
+    px(sx - R(8), top - R(9), R(16), R(5), "#1a2e3c");
+    px(sx - R(6), top - R(5), R(12), Math.max(2, R(2)), near ? "#ffe3a8" : "#6b5c3a");
+    // щит
+    px(sx - w / 2 + R(3), top + R(3), w, h, "rgba(0,0,0,0.30)");
     px(sx - w / 2 - 2, top - 2, w + 4, h + 4, C.standFrame);
     px(sx - w / 2, top, w, h, near ? "#eef3f7" : C.standBody);
-    px(sx - w / 2, top, w, 15, s.accent);
-    text(s.short, sx, top + 3, 9, "#1a1205", "center");
+    const headH = R(15);
+    px(sx - w / 2, top, w, headH, s.accent);
+    text(s.short, sx, top + R(3), R(9), "#1a1205", "center");
 
-    const ix = sx - w / 2 + 5, iy = top + 20, iw = w - 10, ih = 40;
+    const pad = R(5), ix = sx - w / 2 + pad, iw = w - pad * 2;
+    const iy = top + headH + R(5), ih = h - headH - R(22);
     const im = s.image ? getImg(s.image) : null;
     if (im) {
       const k = Math.max(iw / im.naturalWidth, ih / im.naturalHeight);
@@ -862,86 +911,119 @@
     } else if (s.image) {
       px(ix, iy, iw, ih, "#b9c6d1");
     } else {
-      icon(s.icon, sx - 12, iy + 4, 3, C.standInk);
-      for (let i = 0; i < 2; i++) px(ix + 3, top + 52 + i * 5, [40, 30][i], 2, i === 0 ? "#6d8296" : "#9fb0bf");
+      const lines = R(16);                                  // место под две строки внизу
+      const m = Math.max(2, Math.floor((ih - lines) / 8));   // пиктограмма влезает над ними
+      icon(s.icon, sx - m * 4, iy + Math.round((ih - lines - m * 8) / 2), m, C.standInk);
+      for (let i = 0; i < 2; i++) {
+        px(ix + R(3), iy + ih - lines + R(4) + i * R(6), [R(40), R(30)][i],
+           Math.max(2, R(2)), i === 0 ? "#6d8296" : "#9fb0bf");
+      }
     }
-    px(sx - w / 2, base - 12, w, 12, C.standBody2);
-    px(sx - w / 2, base - 12, w, 1, "#aab9c5");
-    text(String(s.index + 1).padStart(2, "0"), sx - w / 2 + 6, base - 10, 8, "#4a5c69", "left");
+    const plate = R(12);
+    px(sx - w / 2, base - plate, w, plate, C.standBody2);
+    px(sx - w / 2, base - plate, w, 1, "#aab9c5");
+    text(String(s.index + 1).padStart(2, "0"), sx - w / 2 + R(6), base - plate + R(2), R(8), "#4a5c69", "left");
     if (seen.has(s.id)) {
-      px(sx + w / 2 - 16, base - 10, 10, 8, "#2f8f63");
-      px(sx + w / 2 - 13, base - 6, 2, 2, "#d9f5e6");
-      px(sx + w / 2 - 11, base - 8, 2, 2, "#d9f5e6");
+      px(sx + w / 2 - R(16), base - plate + R(2), R(10), R(8), "#2f8f63");
+      px(sx + w / 2 - R(13), base - plate + R(6), R(2), R(2), "#d9f5e6");
+      px(sx + w / 2 - R(11), base - plate + R(4), R(2), R(2), "#d9f5e6");
     }
     ctx.fillStyle = "rgba(0,0,0,0.35)";
-    ctx.fillRect((sx - 13) | 0, foot, 26, 3);
+    ctx.fillRect((sx - R(15)) | 0, foot, R(30), R(3));
   }
 
   function drawFloor(cam, width) {
-    px(0, FLOOR_Y - 8, VW, VH - FLOOR_Y + 8, C.floor);
-    px(0, FLOOR_Y - 8, VW, 1, "#1d3d4e");
-    px(0, FLOOR_Y + 8, VW, 14, C.floorLane);
-    px(0, FLOOR_Y + 8, VW, 1, "#20394a");
-    for (let x = -(cam % 40); x < VW; x += 40) px(x, FLOOR_Y - 7, 1, VH - FLOOR_Y + 7, "#0e1d26");
-    px(0, VH - 6, VW, 6, C.floorEdge);
-    const step = game.scene === "corridor" ? 120 : 240;
-    const start = game.scene === "corridor" ? 60 : 120;
+    const R = G.R;
+    px(0, G.floorTop, VW, VH - G.floorTop, C.floor);
+    px(0, G.floorTop, VW, 1, "#1d3d4e");
+    px(0, G.laneY, VW, G.laneH, C.floorLane);
+    px(0, G.laneY, VW, 1, "#20394a");
+    for (let x = -(cam % R(40)); x < VW; x += R(40)) px(x, G.floorTop + 1, 1, VH - G.floorTop - 1, "#0e1d26");
+    px(0, VH - R(6), VW, R(6), C.floorEdge);
+    const step = game.scene === "corridor" ? G.lampStep : G.hubLampStep;
+    const start = game.scene === "corridor" ? R(60) : R(120);
     for (let wx = start; wx < width; wx += step) {
       const sx = wx - cam;
-      if (sx < -70 || sx > VW + 70) continue;
+      if (sx < -R(80) || sx > VW + R(80)) continue;
       ctx.fillStyle = "rgba(255,214,140,0.05)";
-      ctx.beginPath(); ctx.ellipse(sx, FLOOR_Y + 8, 46, 11, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(sx, G.laneY, R(46), R(11), 0, 0, Math.PI * 2); ctx.fill();
     }
   }
 
-  /* ═══ человечек ═══════════════════════════════════════════════════════ */
+  /* ═══ человечек: капитан в чёрном кителе, без фуражки ═══════════════ */
   const P = {
-    out: "#0a111a", cap: "#1d3f63", capHi: "#2c5c8c", brim: "#132b47",
-    skin: "#e9b58b", skinSh: "#c98f66", shirt: "#e6eef6", shirtSh: "#b9cbdb",
-    trou: "#27384d", trouSh: "#1a2636", shoe: "#0f1720"
+    out: "#05070a", jkt: "#1b2130", jktS: "#11161f", rim: "#38465e",
+    gold: "#e3b457", gold2: "#a9823a", shirt: "#eef3f8", tie: "#0a0d12",
+    skin: "#e3ab80", skinS: "#bd8657", hair: "#2b2119",
+    trou: "#161b25", trouS: "#0e121a", shoe: "#090b0f"
   };
+
   function drawPlayer(sx, dir, phase, moving, t) {
-    const sw = moving ? [[-4, 4], [0, 0], [4, -4], [0, 0]][phase] : [0, 0];
+    const sw = moving ? [[-5, 5], [0, 0], [5, -5], [0, 0]][phase] : [0, 0];
     const lift = moving ? [0, 1, 0, 1][phase] : 0;
-    const bob = moving ? [0, 1, 0, 1][phase] : (Math.sin(t / 620) > 0.6 ? 1 : 0);
-    const x = Math.round(sx), y = FLOOR_Y + bob;
+    const bob = moving ? [0, 1, 0, 1][phase] : (Math.sin(t / 640) > 0.6 ? 1 : 0);
+    const x = Math.round(sx), B = FLOOR_Y + bob, f = dir > 0;
+    const Y = (up) => B - up;              // высота над палубой
 
-    ctx.fillStyle = "rgba(0,0,0,0.38)";
-    ctx.beginPath(); ctx.ellipse(x, FLOOR_Y + 1, 11, 3, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "rgba(0,0,0,0.40)";
+    ctx.beginPath(); ctx.ellipse(x, FLOOR_Y + 1, 15, 4, 0, 0, Math.PI * 2); ctx.fill();
 
+    // ноги и ботинки
     [0, 1].forEach((i) => {
-      const lx = x - 6 + i * 6 + sw[i] * dir;
-      px(lx - 1, y - 15, 7, 13, P.out);
-      px(lx, y - 14, 5, 12, i === 0 ? P.trou : P.trouSh);
-      px(lx - 2, y - 3 - lift, 9, 4, P.out);
-      px(lx - 1 + (dir > 0 ? 1 : 0), y - 2 - lift, 7, 2, P.shoe);
+      const lx = x + (i === 0 ? -11 : 2) + sw[i] * dir;
+      px(lx - 1, Y(25), 11, 21, P.out);
+      px(lx, Y(24), 9, 19, i === 0 ? P.trou : P.trouS);
+      const sh = lx - 2 + (f ? 2 : -2);
+      px(sh, Y(6) - lift, 13, 6, P.out);
+      px(sh + 1, Y(5) - lift, 11, 4, P.shoe);
     });
-    px(x - 10, y - 31, 20, 17, P.out);
-    px(x - 9, y - 30, 18, 15, P.shirt);
-    px(x + (dir > 0 ? 3 : -9), y - 30, 6, 15, P.shirtSh);
-    px(x - 9, y - 18, 18, 3, P.trou);
-    px(x - 9, y - 18, 18, 1, P.out);
-    px(x + (dir > 0 ? -7 : 3), y - 28, 4, 3, C.amber);
+
+    // китель
+    px(x - 15, Y(47), 30, 28, P.out);
+    px(x - 14, Y(46), 28, 26, P.jkt);
+    px(x + (f ? 5 : -14), Y(46), 9, 26, P.jktS);
+    px(x + (f ? -14 : 13), Y(45), 1, 24, P.rim);          // блик от светильника
+    px(x - 14, Y(21), 28, 2, P.out);                       // низ кителя
+    // сорочка, лацканы, галстук
+    px(x - 6, Y(47), 12, 9, P.shirt);
+    px(x - 11, Y(47), 6, 10, P.jkt);
+    px(x + 5, Y(47), 6, 10, P.jkt);
+    px(x - 11, Y(47), 1, 10, P.out);
+    px(x + 10, Y(47), 1, 10, P.out);
+    px(x - 2, Y(45), 4, 9, P.tie);
+    // пуговицы в два ряда
+    [40, 34, 28].forEach((up) => {
+      px(x - 8, Y(up), 2, 2, P.gold);
+      px(x + 6, Y(up), 2, 2, P.gold);
+    });
+    // погоны
+    px(x - 15, Y(47), 7, 3, P.gold2); px(x + 8, Y(47), 7, 3, P.gold2);
+    px(x - 15, Y(47), 7, 1, P.gold);   px(x + 8, Y(47), 7, 1, P.gold);
+
+    // руки, на обшлагах четыре нашивки
     [0, 1].forEach((i) => {
-      const off = Math.round(-sw[i] * dir * 0.7);
-      const ax = i === 0 ? x - 13 : x + 9;
-      px(ax, y - 29 + off, 5, 14, P.out);
-      px(ax + 1, y - 28 + off, 3, 11, P.shirtSh);
-      px(ax + 1, y - 17 + off, 3, 3, P.skin);
+      const off = Math.round(-sw[i] * dir * 0.6);
+      const ax = i === 0 ? x - 21 : x + 13;
+      px(ax, Y(45) + off, 8, 24, P.out);
+      px(ax + 1, Y(44) + off, 6, 22, i === 0 ? P.jkt : P.jktS);
+      for (let k = 0; k < 4; k++) px(ax + 1, Y(31 - k * 3) + off, 6, 2, P.gold);
+      px(ax + 1, Y(22) + off, 6, 4, P.skin);
     });
-    px(x - 3, y - 33, 6, 3, P.skinSh);
-    px(x - 7, y - 46, 14, 14, P.out);
-    px(x - 6, y - 45, 12, 12, P.skin);
-    px(x + (dir > 0 ? 1 : -6), y - 45, 5, 12, P.skinSh);
-    px(x + (dir > 0 ? 1 : -3), y - 41, 2, 2, "#15202c");
-    px(x + (dir > 0 ? -4 : 2), y - 41, 2, 2, "#15202c");
-    px(x - 4, y - 36, 8, 1, P.skinSh);
-    px(x - 8, y - 52, 16, 7, P.out);
-    px(x - 7, y - 51, 14, 5, P.cap);
-    px(x - 7, y - 51, 14, 2, P.capHi);
-    px(x - 9, y - 47, 18, 3, P.out);
-    px(x + (dir > 0 ? -7 : -10), y - 46, 18, 2, P.brim);
-    px(x - 2, y - 50, 4, 3, C.amber);
+
+    // шея и голова
+    px(x - 5, Y(52), 10, 7, P.skinS);
+    px(x - 9, Y(63), 18, 18, P.out);
+    px(x - 8, Y(62), 16, 16, P.skin);
+    px(x + (f ? 2 : -8), Y(62), 6, 16, P.skinS);
+    px(x + (f ? 1 : -3), Y(56), 2, 2, "#141a22");
+    px(x + (f ? -4 : 2), Y(56), 2, 2, "#141a22");
+    px(x - 5, Y(59), 10, 1, P.hair);
+    px(x - 2, Y(51), 4, 1, P.skinS);
+    // волосы, фуражки нет
+    px(x - 9, Y(68), 18, 6, P.hair);
+    px(x - 10, Y(64), 2, 5, P.hair);
+    px(x + 8, Y(64), 2, 5, P.hair);
+    px(x + (f ? -9 : 3), Y(63), 6, 2, P.hair);
   }
 
   /* ═══ цикл ════════════════════════════════════════════════════════════ */
@@ -1014,7 +1096,15 @@
     }
   }
 
-  addEventListener("resize", () => { resize(); placeRail(); });
+  addEventListener("resize", () => {
+    const frac = game.x / Math.max(1, worldWidth());
+    resize();
+    relayout();
+    const ww = worldWidth();
+    game.x = clamp(frac * ww, 28, ww - 28);
+    game.cam = clamp(game.x - VW / 2, 0, Math.max(0, ww - VW));
+    placeRail();
+  });
 
   /* ═══ пуск ════════════════════════════════════════════════════════════ */
   (async () => {

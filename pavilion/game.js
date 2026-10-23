@@ -179,6 +179,23 @@
     return { id: key, name: g.name || key, role: g.role === "captain" ? "captain" : "cadet", note: g.note || "" };
   })();
   const SUIT = GUEST ? GUEST.role : "captain";
+
+  /* Отметка о входе слушателя. Сервера у павильона нет, поэтому страница просто
+     дёргает существующий файл на машине академии с меткой в адресе — запрос
+     оседает в журнале nginx. Конфиг той машины не трогается ничем. Автор
+     (адрес без ?g=) не отмечается: это журнал слушателей, а не слежка. */
+  const BEACON = "https://academy.capt-tymur.com/robots.txt";
+  function mark(event, n) {
+    if (!GUEST) return;
+    try {
+      const q = "?edu=" + encodeURIComponent(PID) +
+        "&u=" + encodeURIComponent(GUEST.id) +
+        "&e=" + encodeURIComponent(event) +
+        (n == null ? "" : "&n=" + n) +
+        "&t=" + Date.now();
+      new Image().src = BEACON + q;
+    } catch (e) { /* не вышло — не беда, это не часть прохождения */ }
+  }
   const SEEN_KEY = "skipi-edu/" + PID + "/seen" + (GUEST ? "/" + GUEST.id : "");
 
   let stands = [];
@@ -448,6 +465,7 @@
     sheetCard.querySelector(".card").style.borderTopColor = s.accent;
     openSheet(sheetCard);
     markSeen(s.id);
+    mark("stand:" + s.id, seen.size);
     syncChrome();
   }
 
@@ -489,6 +507,7 @@
     currentStand = null;
     const done = stands.filter((s) => seen.has(s.id)).length;
     const all = stands.length > 0 && done === stands.length;
+    mark(all ? "done" : "exit", done);
     $("card-no").textContent = "Выход";
     $("card-no").style.color = C.teal;
     $("card-title").textContent = all ? "Коридор пройден" : "Вы у выхода";
@@ -812,6 +831,7 @@
     if (!titleShown) return;
     titleShown = false;
     $("title").classList.add("hide");
+    mark("enter", 0);
     game.fadeDir = -1;
     syncChrome();
   }

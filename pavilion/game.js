@@ -458,6 +458,7 @@
   addEventListener("blur", () => { held.left = held.right = false; });
 
   if ("ontouchstart" in window || navigator.maxTouchPoints > 0) document.body.classList.add("is-touch");
+  if (GUEST) document.body.classList.add("guest-mode");
   document.querySelectorAll("[data-hold]").forEach((btn) => {
     const key = btn.dataset.hold;
     const down = (e) => { e.preventDefault(); if (key === "act") interact(); else { held[key] = true; game.autoTarget = null; } };
@@ -518,7 +519,8 @@
   const sheetCard = $("modal"), sheetEd = $("editor"), sheetData = $("data");
   const elPrompt = $("prompt"), elPromptCap = $("prompt-cap"), elPromptKey = $("prompt-key");
   const elWhere = $("hud-where"), elCount = $("hud-count"), elRail = $("rail"), elToast = $("toast");
-  const btnAdd = $("btn-add"), btnData = $("btn-data");
+  const btnAdd = $("btn-add"), btnData = $("btn-data"), btnMenu = $("btn-menu");
+  const sheetMenu = $("menu");
 
   let toastTimer = 0;
   function toast(msg) {
@@ -535,6 +537,7 @@
   }
   function closeTop() {
     if (sheetEd.classList.contains("on")) { commitEditor(); closeSheet(sheetEd); return; }
+    if (sheetMenu.classList.contains("on")) { closeSheet(sheetMenu); return; }
     if (sheetData.classList.contains("on")) { closeSheet(sheetData); return; }
     if (sheetCard.classList.contains("on")) { closeSheet(sheetCard); return; }
   }
@@ -956,6 +959,118 @@
     toast("Стенд создан");
   });
 
+  /* ═══ меню модуля: порядок стендов ════════════════════════════════════
+     Список всех стендов раздела. Автор меняет порядок перетаскиванием
+     мышкой или пальцем, слушатель только смотрит и переходит к стенду. */
+  const elMenuList = $("menu-list");
+  let dragRow = null;
+
+  function rowAfter(y) {
+    // ближайшая строка, ниже середины которой находится указатель
+    const rows = [...elMenuList.querySelectorAll(".mrow:not(.drag)")];
+    return rows.reduce((best, row) => {
+      const b = row.getBoundingClientRect();
+      const off = y - (b.top + b.height / 2);
+      return off < 0 && off > best.off ? { off, row } : best;
+    }, { off: -Infinity, row: null }).row;
+  }
+
+  function renumber() {
+    [...elMenuList.children].forEach((li, i) => {
+      const n = li.querySelector(".num");
+      if (n) n.textContent = String(i + 1).padStart(2, "0");
+    });
+  }
+
+  function commitOrder() {
+    const ids = [...elMenuList.children].map((li) => li.dataset.id);
+    const byId = new Map(stands.map((s) => [s.id, s]));
+    const next = ids.map((id) => byId.get(id)).filter(Boolean);
+    if (next.length !== stands.length) return;          // ничего не теряем
+    const changed = next.some((s, i) => s !== stands[i]);
+    if (!changed) return;
+    stands = next;
+    save(); relayout();
+    toast("Порядок стендов изменён");
+  }
+
+  function buildMenu() {
+    elMenuList.innerHTML = "";
+    stands.forEach((s, i) => {
+      const li = document.createElement("li");
+      li.className = "mrow" + (seen.has(s.id) ? " seen" : "");
+      li.dataset.id = s.id;
+
+      const grip = document.createElement("span");
+      grip.className = "grip"; grip.textContent = "⠿"; grip.title = "Перетащите, чтобы поменять порядок";
+      const num = document.createElement("span");
+      num.className = "num"; num.textContent = String(i + 1).padStart(2, "0");
+      const shrt = document.createElement("span");
+      shrt.className = "shrt"; shrt.textContent = s.short; shrt.style.background = s.accent;
+      const ttl = document.createElement("span");
+      ttl.className = "ttl"; ttl.textContent = s.title || s.short;
+      const marks = document.createElement("span");
+      marks.className = "marks";
+      marks.textContent = [
+        (s.images && s.images.length > 1) ? "слайдов " + s.images.length : (s.image ? "слайд" : ""),
+        (s.videos && s.videos.length) ? "видео" : "",
+        (s.downloads && s.downloads.length) ? "файл" : ""
+      ].filter(Boolean).join(" · ");
+
+      li.appendChild(grip); li.appendChild(num); li.appendChild(shrt);
+      li.appendChild(ttl); li.appendChild(marks);
+
+      // переход к стенду по нажатию, если это не перетаскивание
+      li.addEventListener("click", () => {
+        if (li.dataset.dragged === "1") { li.dataset.dragged = ""; return; }
+        closeSheet(sheetMenu);
+        game.autoTarget = s.x; game.autoOpen = s.id;
+      });
+
+      if (!GUEST) {
+        li.addEventListener("pointerdown", (e) => {
+          if (e.button !== undefined && e.button !== 0) return;
+          dragRow = li; li.dataset.dragged = "";
+          li.classList.add("drag");
+          // Захват держим на СПИСКЕ: перемещение самой строки в DOM снимает
+          // захват с неё, и события уходят другим строкам.
+          try { elMenuList.setPointerCapture(e.pointerId); } catch (err) { /* не беда */ }
+        });
+      }
+      elMenuList.appendChild(li);
+    });
+    $("mn-no").textContent = "Модуль";
+    $("mn-title").textContent = SEED.title || "Стенды";
+    $("mn-lead").textContent = stands.length + " стендов, пройдено "
+      + stands.filter((s) => seen.has(s.id)).length + ".";
+    $("mn-hint").textContent = GUEST ? "нажмите на стенд, чтобы перейти к нему"
+      : "перетащите за ⠿, чтобы поменять порядок";
+  }
+
+  elMenuList.addEventListener("pointermove", (e) => {
+    if (!dragRow) return;
+    dragRow.dataset.dragged = "1";
+    const after = rowAfter(e.clientY);
+    if (after) { if (after !== dragRow.nextSibling) elMenuList.insertBefore(dragRow, after); }
+    else if (elMenuList.lastChild !== dragRow) elMenuList.appendChild(dragRow);
+    renumber();
+  });
+  const endDrag = () => {
+    if (!dragRow) return;
+    dragRow.classList.remove("drag");
+    dragRow = null;
+    commitOrder();
+    renumber();
+  };
+  elMenuList.addEventListener("pointerup", endDrag);
+  elMenuList.addEventListener("pointercancel", endDrag);
+  elMenuList.addEventListener("lostpointercapture", endDrag);
+
+  btnMenu.addEventListener("click", () => { buildMenu(); openSheet(sheetMenu); });
+  $("mn-x").addEventListener("click", () => closeSheet(sheetMenu));
+  $("mn-done").addEventListener("click", () => closeSheet(sheetMenu));
+  sheetMenu.addEventListener("pointerdown", (e) => { if (e.target === sheetMenu) closeSheet(sheetMenu); });
+
   /* ═══ данные: выгрузка, загрузка, сброс ═══════════════════════════════ */
   btnData.addEventListener("click", async () => {
     const backup = await storeGet(PID + "/backup");
@@ -1046,6 +1161,7 @@
     const corridor = game.scene === "corridor";
     elCount.hidden = !corridor;
     elRail.hidden = !corridor;
+    btnMenu.hidden = !corridor;
     btnAdd.hidden = !corridor || !!GUEST;
     btnData.hidden = !corridor || !!GUEST;
     elWhere.innerHTML =

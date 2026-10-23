@@ -179,8 +179,30 @@
   }
 
   /* ═══ модель ══════════════════════════════════════════════════════════ */
-  const SEED = window.SKIPI_PAVILION || { id: "pavilion", title: "Павильон", subtitle: "", stands: [] };
-  const PID = SEED.id;
+  // Павильонов несколько. Каждый лежит в своём файле content/<id>.js и объявляет
+  // window.SKIPI_PAVILION; файлы грузятся по списку дверей курса, по одному,
+  // и складываются в реестр. Активный павильон выбирается входом в дверь.
+  const PAVS = {};
+  let SEED = { id: "course", title: "Павильон", subtitle: "", stands: [] };
+  let PID = SEED.id;
+
+  function loadScript(src) {
+    return new Promise((res) => {
+      const s = document.createElement("script");
+      s.src = src;
+      s.onload = () => res(true);
+      s.onerror = () => res(false);
+      document.head.appendChild(s);
+    });
+  }
+  async function loadPavilions(ids) {
+    for (const id of ids) {
+      try { delete window.SKIPI_PAVILION; } catch (e) { window.SKIPI_PAVILION = undefined; }
+      const ok = await loadScript("content/" + id + ".js");
+      const p = window.SKIPI_PAVILION;
+      if (ok && p && Array.isArray(p.stands)) PAVS[p.id || id] = p;
+    }
+  }
 
   // Персональная ссылка: ?g=<ключ из content/guests.js>.
   // Гость читает павильон и не видит редактора. Без параметра — автор.
@@ -194,6 +216,7 @@
     return { id: key, name: g.name || key, role: g.role === "captain" ? "captain" : "cadet", note: g.note || "" };
   })();
   const SUIT = GUEST ? GUEST.role : "captain";
+  let SEEN_KEY = "", SEED_FP = "";
 
   /* Отметка о входе слушателя. Сервера у павильона нет, поэтому страница просто
      дёргает существующий файл на машине академии с меткой в адресе — запрос
@@ -211,12 +234,11 @@
       new Image().src = BEACON + q;
     } catch (e) { /* не вышло — не беда, это не часть прохождения */ }
   }
-  const SEEN_KEY = "skipi-edu/" + PID + "/seen" + (GUEST ? "/" + GUEST.id : "");
+
 
   let stands = [];
   let CORRIDOR_W = 900, EXIT_X = 780;
   let seen = new Set();
-  try { seen = new Set(JSON.parse(localStorage.getItem(SEEN_KEY) || "[]")); } catch (e) { /* приватный режим */ }
 
   const newId = () => "s" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
 
@@ -234,8 +256,12 @@
     for (let i = 0; i < s.length; i++) h = (((h * 33) ^ s.charCodeAt(i)) >>> 0);
     return h.toString(36) + "." + s.length.toString(36);
   }
-  const SEED_FP = fingerprint(SEED.stands);
   let lastBackupKey = null;
+  const seenKeyFor = (id) => "skipi-edu/" + id + "/seen" + (GUEST ? "/" + GUEST.id : "");
+  function seenSetFor(id) {
+    try { return new Set(JSON.parse(localStorage.getItem(seenKeyFor(id)) || "[]")); }
+    catch (e) { return new Set(); }
+  }
 
   function normalize(raw, i) {
     return {
@@ -459,11 +485,12 @@
     const f = game.focus;
     if (!f) return;
     if (f.kind === "door") {
-      if (f.door.open) go("corridor", ENTRY_X + Math.round(40 * U));
-      else toast("Раздел «" + f.door.label.toLowerCase() + "» ещё закрыт");
+      if (!f.door.open) { toast("Раздел «" + f.door.label.toLowerCase() + "» ещё закрыт"); return; }
+      const d = f.door;
+      enterPavilion(d.pavilion).then(() => go("corridor", ENTRY_X + Math.round(40 * U)));
       return;
     }
-    if (f.kind === "entry") { go("hub", DOORS[0].x); return; }
+    if (f.kind === "entry") { go("hub", doorOfActive().x); return; }
     if (f.kind === "exit") { openFinal(); return; }
     openStand(f.stand);
   }
@@ -694,7 +721,7 @@
   $("card-next").addEventListener("click", () => {
     const s = currentStand;
     closeSheet(sheetCard);
-    if (!s) { go("hub", DOORS[0].x); return; }
+    if (!s) { go("hub", doorOfActive().x); return; }
     const next = stands[s.index + 1];
     game.autoTarget = next ? next.x : EXIT_X;
     game.autoOpen = next ? next.id : null;
@@ -1057,9 +1084,19 @@
       textFit(sign[0], sx0 + sw / 2, sy + R(8), R(9), C.teal, "center", sw - R(16));
       textFit(sign[1], sx0 + sw / 2, sy + R(23), R(13), C.paper, "center", sw - R(16));
     }
-    const all = stands.length > 0 && stands.every((s) => seen.has(s.id));
-    DOORS.forEach((d, i) => drawDoor(d.x - cam, d.label, d.open, i === 0 && all));
+    DOORS.forEach((d) => drawDoor(d.x - cam, d.label, d.open, doorDone(d)));
     drawFloor(cam, HUB_W);
+  }
+
+  // Дверь помечается пройденной, если в её павильоне открыты все стенды.
+  function doorDone(d) {
+    if (!d.pavilion) return false;
+    const pav = PAVS[d.pavilion];
+    const total = d.pavilion === PID ? stands.length : (pav && pav.stands ? pav.stands.length : 0);
+    if (!total) return false;
+    const got = d.pavilion === PID ? seen : seenSetFor(d.pavilion);
+    if (d.pavilion === PID) return stands.every((s) => got.has(s.id));
+    return pav.stands.every((s) => got.has(s.id));
   }
 
   function drawDoor(sx, label, open, done) {
@@ -1434,7 +1471,14 @@
   });
 
   /* ═══ пуск ════════════════════════════════════════════════════════════ */
-  (async () => {
+  const doorOfActive = () => DOORS.find((d) => d.pavilion === PID) || DOORS[0];
+
+  async function enterPavilion(id) {
+    SEED = PAVS[id] || { id, title: id, subtitle: "", stands: [] };
+    PID = SEED.id || id;
+    SEED_FP = fingerprint(SEED.stands);
+    SEEN_KEY = seenKeyFor(PID);
+    seen = seenSetFor(PID);
     const saved = await storeGet(PID);
     const hasLocal = saved && Array.isArray(saved.stands) && saved.stands.length;
     let list = SEED.stands || [];
@@ -1458,9 +1502,17 @@
     stands = list.map(normalize);
     await save();
     relayout();
-    requestAnimationFrame(frame);
     if (replaced) {
       setTimeout(() => toast("Содержание обновлено автором курса. Ваш прежний набор сохранён в резерве"), 900);
     }
+  }
+
+  /* ═══ пуск ════════════════════════════════════════════════════════════ */
+  (async () => {
+    await loadPavilions(COURSE_DOORS.map((d) => d.pavilion).filter(Boolean));
+    // дверь без загруженного содержания открыть нельзя, иначе пустой коридор
+    DOORS.forEach((d) => { if (d.pavilion && !PAVS[d.pavilion]) d.open = false; });
+    syncChrome();
+    requestAnimationFrame(frame);
   })();
 })();

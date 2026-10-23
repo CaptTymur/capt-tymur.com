@@ -12,6 +12,7 @@ window.SKIPI_COURSE = {
   sub: "Курс",
 
   doors: [
+    { label: "Вступление",                        open: true, pavilion: "intro" },
     { label: "Коммуникация",                      open: true, pavilion: "communication" },
     { label: "Коммерческий менеджмент",           open: false },
     { label: "Технический менеджмент",            open: false },

@@ -377,27 +377,44 @@
   }
 
   /* ═══ состояние игры ══════════════════════════════════════════════════ */
-  const COURSE = window.SKIPI_COURSE || {};
-  const COURSE_DOORS = Array.isArray(COURSE.doors) && COURSE.doors.length
-    ? COURSE.doors
-    : [{ label: SEED.title || "Павильон", open: true, pavilion: PID }];
-  COURSE_DOORS.forEach((d, i) => {
-    const base = DOOR_FIRST + i * DOOR_STEP;
-    DOORS.push({
-      base, x: Math.round(base * U),
-      label: String(d.label || "—").toUpperCase(),
-      open: !!d.open,
-      pavilion: d.pavilion || ""
+  const ACADEMY = window.SKIPI_ACADEMY || {
+    title: "Skipi Education", place: "",
+    buildings: [{ id: "b1", label: "Учебный корпус", open: true,
+      courses: [Object.assign({ id: "c1", label: (window.SKIPI_COURSE || {}).title || "Курс", open: true },
+        { doors: ((window.SKIPI_COURSE || {}).doors) || [] })] }]
+  };
+  const BUILDINGS = ACADEMY.buildings || [];
+  let building = null, course = null;      // где мы сейчас
+
+  // Список дверей текущего уровня. Дверь знает, что за ней.
+  function doorsOf(level) {
+    if (level === "street") {
+      return BUILDINGS.map((b) => ({ kind: "building", ref: b, label: b.label, sub: b.address || "", open: !!b.open }));
+    }
+    if (level === "hall") {
+      return ((building && building.courses) || [])
+        .map((c) => ({ kind: "course", ref: c, label: c.label, sub: c.sub || "", open: !!c.open }));
+    }
+    return ((course && course.doors) || [])
+      .map((d) => ({ kind: "pavilion", ref: d, label: d.label, sub: "", open: !!d.open, pavilion: d.pavilion || "" }));
+  }
+
+  function setLevel(level) {
+    DOORS.length = 0;
+    doorsOf(level).forEach((d, i) => {
+      const base = DOOR_FIRST + i * DOOR_STEP;
+      DOORS.push(Object.assign(d, { base, x: Math.round(base * U), label: String(d.label || "—").toUpperCase() }));
     });
-  });
-  HUB_W = Math.round((DOOR_FIRST + COURSE_DOORS.length * DOOR_STEP) * U);
+    HUB_W = Math.round((DOOR_FIRST + Math.max(1, DOORS.length) * DOOR_STEP) * U);
+  }
+  setLevel("street");
   const game = {
-    scene: "hub", x: Math.round(170 * U), facing: 1, walkPhase: 0, moving: false,
+    scene: "street", x: Math.round(170 * U), facing: 1, walkPhase: 0, moving: false,
     cam: 0, fade: 1, fadeDir: -1, fadeThen: null,
     autoTarget: null, autoOpen: null, focus: null
   };
   const SPEED = 78;
-  const worldWidth = () => (game.scene === "hub" ? HUB_W : CORRIDOR_W);
+  const worldWidth = () => (game.scene === "corridor" ? CORRIDOR_W : HUB_W);
   const uiOpen = () => !!document.querySelector(".sheet.on");
 
   function go(scene, atX) {
@@ -472,7 +489,11 @@
       const d = Math.abs(x - game.x);
       if (d < reach && (!best || d < best.dist)) best = Object.assign({ kind, dist: d }, extra || {});
     };
-    if (game.scene === "hub") { DOORS.forEach((d) => near("door", d.x, { door: d })); return best; }
+    if (game.scene !== "corridor") {
+      DOORS.forEach((d) => near("door", d.x, { door: d }));
+      if (game.scene !== "street") near("back", Math.round(140 * U));
+      return best;
+    }
     stands.forEach((s) => near("stand", s.x, { stand: s }));
     near("exit", EXIT_X);
     near("entry", ENTRY_X);
@@ -484,13 +505,9 @@
     if (uiOpen() || game.fadeDir === 1) return;
     const f = game.focus;
     if (!f) return;
-    if (f.kind === "door") {
-      if (!f.door.open) { toast("Раздел «" + f.door.label.toLowerCase() + "» ещё закрыт"); return; }
-      const d = f.door;
-      enterPavilion(d.pavilion).then(() => go("corridor", ENTRY_X + Math.round(40 * U)));
-      return;
-    }
-    if (f.kind === "entry") { go("hub", doorOfActive().x); return; }
+    if (f.kind === "door") { openDoor(f.door); return; }
+    if (f.kind === "back") { goBack(); return; }
+    if (f.kind === "entry") { goBack(); return; }
     if (f.kind === "exit") { openFinal(); return; }
     openStand(f.stand);
   }
@@ -721,7 +738,7 @@
   $("card-next").addEventListener("click", () => {
     const s = currentStand;
     closeSheet(sheetCard);
-    if (!s) { go("hub", doorOfActive().x); return; }
+    if (!s) { goBack(); return; }
     const next = stands[s.index + 1];
     game.autoTarget = next ? next.x : EXIT_X;
     game.autoOpen = next ? next.id : null;
@@ -992,9 +1009,11 @@
     elRail.hidden = !corridor;
     btnAdd.hidden = !corridor || !!GUEST;
     btnData.hidden = !corridor || !!GUEST;
-    elWhere.innerHTML = corridor
-      ? esc(SEED.title) + "<small>" + esc(SEED.subtitle || "Skipi Education") + "</small>"
-      : "Вестибюль<small>" + esc(COURSE.title || "Skipi Education") + "</small>";
+    elWhere.innerHTML =
+      corridor ? esc(SEED.title) + "<small>" + esc(SEED.subtitle || "") + "</small>"
+      : game.scene === "street" ? esc(ACADEMY.title || "Академия") + "<small>" + esc(ACADEMY.place || "") + "</small>"
+      : game.scene === "hall" ? esc(building ? building.label : "Корпус") + "<small>" + esc(building && building.address ? building.address : "") + "</small>"
+      : "Вестибюль<small>" + esc(course ? course.label : "") + "</small>";
     if (corridor) {
       const done = stands.filter((s) => seen.has(s.id)).length;
       elCount.innerHTML = "<b>" + done + "/" + stands.length + "</b><small>стенды</small>";
@@ -1016,9 +1035,9 @@
     }
     const note = document.querySelector("#title .title-note");
     if (note) {
-      note.textContent = GUEST.name + ", это ваш персональный вход на курс. В вестибюле курса — двери "
-        + "разделов; открыт первый, «Коммуникация». Внутри коридор со стендами: подойдите к стенду "
-        + "и откройте его. Регистрации нет.";
+      note.textContent = GUEST.name + ", это ваш персональный вход. Вы на набережной академии: "
+        + "идите вдоль неё и заходите в учебный корпус. Внутри двери курсов, в курсе — разделы, "
+        + "в разделе коридор со стендами. Регистрации нет.";
     }
   })();
 
@@ -1026,11 +1045,11 @@
     const main = document.querySelector("#title .title-main");
     const sub = document.querySelector("#title .title-sub");
     const kick = document.querySelector("#title .title-kicker");
-    const course = COURSE.title || SEED.title || "";
-    if (kick) kick.textContent = COURSE.kicker || "Skipi Education";
-    if (main) main.textContent = course.toUpperCase();
-    if (sub) { sub.textContent = (COURSE.sub || "Курс").toUpperCase(); sub.hidden = false; }
-    document.title = "Skipi Education — курс «" + course + "»";
+    const name = ACADEMY.title || "Skipi Education";
+    if (kick) kick.textContent = "Skipi Education";
+    if (main) main.textContent = name.toUpperCase();
+    if (sub) { sub.textContent = (ACADEMY.place || "").toUpperCase(); sub.hidden = !ACADEMY.place; }
+    document.title = name;
   })();
   let titleShown = true;
   function startGame() {
@@ -1074,8 +1093,11 @@
     px(0, R(62), VW, 2, C.wallTrim);
     px(0, FLOOR_Y - R(10), VW, R(10), C.skirt);
 
-    const sign = [(COURSE.sub || "Курс").toUpperCase(),
-                  (COURSE.title || SEED.title || "").toUpperCase()];
+    const sign = game.scene === "hall"
+      ? [(building && building.address ? building.address : "Академия").toUpperCase(),
+         (building ? building.label : ACADEMY.title || "").toUpperCase()]
+      : [((course && course.sub) || "Курс").toUpperCase(),
+         ((course && course.label) || "").toUpperCase()];
     const sw = R(268), sh = R(46), sy = R(66), sx0 = R(50) - cam;
     if (sx0 > -sw - 40 && sx0 < VW + 60) {
       px(sx0 - 2, sy - 2, sw + 4, sh + 4, "#0b1b27");
@@ -1084,13 +1106,17 @@
       textFit(sign[0], sx0 + sw / 2, sy + R(8), R(9), C.teal, "center", sw - R(16));
       textFit(sign[1], sx0 + sw / 2, sy + R(23), R(13), C.paper, "center", sw - R(16));
     }
+    if (game.scene !== "street") {
+      drawDoorway(Math.round(140 * U) - cam,
+        game.scene === "hall" ? "НА УЛИЦУ" : "В КОРПУС", "#4a9fd8");
+    }
     DOORS.forEach((d) => drawDoor(d.x - cam, d.label, d.open, doorDone(d)));
     drawFloor(cam, HUB_W);
   }
 
   // Дверь помечается пройденной, если в её павильоне открыты все стенды.
   function doorDone(d) {
-    if (!d.pavilion) return false;
+    if (d.kind !== "pavilion" || !d.pavilion) return false;
     const pav = PAVS[d.pavilion];
     const total = d.pavilion === PID ? stands.length : (pav && pav.stands ? pav.stands.length : 0);
     if (!total) return false;
@@ -1099,7 +1125,142 @@
     return pav.stands.every((s) => got.has(s.id));
   }
 
-  function drawDoor(sx, label, open, done) {
+  /* ═══ улица: набережная Дона, вдоль неё корпуса ══════════════════════ */
+  function drawStreet() {
+    const cam = game.cam, R = G.R;
+
+    // небо
+    const sky = ctx.createLinearGradient(0, 0, 0, Math.round(FLOOR_Y * 0.52));
+    sky.addColorStop(0, "#071320");
+    sky.addColorStop(0.6, "#11293c");
+    sky.addColorStop(1, "#27556b");
+    ctx.fillStyle = sky; ctx.fillRect(0, 0, VW, Math.round(FLOOR_Y * 0.52));
+
+    // дальний берег
+    const hz = Math.round(FLOOR_Y * 0.46);
+    px(0, hz, VW, Math.round(FLOOR_Y * 0.52) - hz, "#16384c");
+    for (let x = -Math.round((cam * 0.22) % R(22)); x < VW + R(22); x += R(22)) {
+      const h = R(5) + (Math.abs(Math.round(x / R(22))) % 3) * R(3);
+      px(x, hz - h, R(13), h + 2, "#12303f");
+    }
+    px(0, hz, VW, 1, "#2a6076");
+    // огоньки дальнего берега
+    for (let x = -Math.round((cam * 0.22) % R(40)); x < VW; x += R(40)) px(x + R(6), hz - R(3), 2, 2, "#e8c98a");
+
+    // терраса под корпусами
+    const terr = Math.round(FLOOR_Y * 0.52);
+    px(0, terr, VW, FLOOR_Y - R(14) - terr, "#1a3344");
+    px(0, terr, VW, 2, "#2e6076");
+    for (let x = -Math.round((cam * 0.75) % R(34)); x < VW + R(34); x += R(34)) {
+      px(x, terr + R(3), R(3), R(7), "#132836");
+    }
+
+    // На улице вход делается меньше интерьерной двери: иначе он занимает
+    // весь фасад и дому негде показать окна.
+    const keepW = G.doorW, keepH = G.doorH;
+    G.doorW = R(58); G.doorH = R(76);
+    DOORS.forEach((d) => {
+      const sx = d.x - cam;
+      if (sx > -R(230) && sx < VW + R(230)) drawFacade(sx, d);
+    });
+
+    // прогулочная полоса: светлый камень, чтобы человечек читался
+    const walkTop = FLOOR_Y - R(14), walkBot = FLOOR_Y + R(5);
+    px(0, walkTop, VW, walkBot - walkTop, "#33454f");
+    px(0, walkTop, VW, 1, "#4a6775");
+    px(0, FLOOR_Y, VW, 1, "#3d5461");
+    for (let x = -(cam % R(26)); x < VW; x += R(26)) px(x, walkTop + 1, 1, walkBot - walkTop - 2, "#2a3a44");
+    // фонари вдоль набережной
+    for (let wx = R(200); wx < HUB_W; wx += R(260)) {
+      const sx = wx - cam;
+      if (sx < -R(20) || sx > VW + R(20)) continue;
+      px(sx - 1, walkTop - R(46), 2, R(46), "#15303f");
+      px(sx - R(5), walkTop - R(52), R(10), R(7), "#1d3f52");
+      px(sx - R(3), walkTop - R(50), R(6), R(3), "#ffd98a");
+      glow(sx, walkTop - R(46), R(34), 0.12);
+    }
+
+    // парапет на краю набережной
+    const par = walkBot;
+    px(0, par, VW, R(3), "#52707e");
+    px(0, par + R(3), VW, R(7), "#22343e");
+    for (let x = -(cam % R(12)); x < VW; x += R(12)) px(x, par + R(4), R(3), R(5), "#3a525f");
+    px(0, par + R(10), VW, R(2), "#1a2a33");
+
+    // вода
+    const wat = par + R(12);
+    px(0, wat, VW, VH - wat, "#0d2c3b");
+    px(0, wat, VW, 1, "#2b6076");
+    for (let i = 0; i < 5; i++) {
+      const y = wat + R(3) + i * R(5);
+      if (y > VH - 2) break;
+      for (let x = -Math.round((cam * 0.35 + i * 17) % R(26)); x < VW; x += R(26)) {
+        px(x, y, R(11), 1, i % 2 ? "#0e3042" : "#113a4c");
+      }
+    }
+    // отражение фонарей
+    for (let wx = R(200); wx < HUB_W; wx += R(260)) {
+      const sx = wx - cam;
+      if (sx < -R(10) || sx > VW + R(10)) continue;
+      for (let i = 0; i < 4; i++) px(sx - 1, wat + R(2) + i * R(5), 2, 2, "rgba(255,217,138,0.28)");
+    }
+    // судно у причала
+    const shipX = R(980) - cam * 0.9;
+    if (shipX > -R(130) && shipX < VW + R(130)) {
+      px(shipX - R(50), wat - R(14), R(100), R(14), "#0a1c26");
+      px(shipX - R(46), wat - R(12), R(92), R(9), "#1d4760");
+      px(shipX - R(14), wat - R(28), R(26), R(14), "#245a76");
+      px(shipX - R(9), wat - R(24), R(6), R(5), "#ffd98a");
+      px(shipX + R(2), wat - R(24), R(6), R(5), "#ffd98a");
+      px(shipX + R(18), wat - R(40), 2, R(26), "#1a4256");
+      px(shipX - R(34), wat - R(34), 2, R(20), "#1a4256");
+    }
+
+    DOORS.forEach((d) => drawDoor(d.x - cam, d.label, d.open, false, d.sub));
+    G.doorW = keepW; G.doorH = keepH;
+  }
+
+  // Фасад корпуса: силуэт зависит от style, чтобы дома не были близнецами.
+  function drawFacade(sx, d) {
+    const R = G.R, st = (d.ref && d.ref.style) || "corpus";
+    const doorTop = FLOOR_Y - R(8) - G.doorH;
+    const plateTop = doorTop - R(44);              // полоса, где висит табличка
+    const top = R(16);
+    const w = R(226), h = doorTop - top + R(30);
+    const lit = d.open;
+    px(sx - w / 2 - 2, top - 2, w + 4, h + 4, "#071520");
+    px(sx - w / 2, top, w, h, lit ? "#20475c" : "#172f3d");
+    px(sx - w / 2, top, w, R(4), lit ? "#357a94" : "#1f3d4e");
+
+    if (st === "arches") {
+      for (let i = 0; i < 6; i++) {
+        const ax = sx - w / 2 + R(18) + i * R(33);
+        const ay = top + R(22), ah = h - R(34);
+        px(ax, ay, R(22), ah, "#0b1f2b");
+        disc(ax + R(11), ay, R(11), "#0b1f2b");
+        if (lit) { px(ax + 2, ay, R(18), ah - 2, "#16394b"); disc(ax + R(11), ay, R(9), "#16394b"); }
+      }
+    } else if (st === "hall") {
+      px(sx - w / 2 + R(10), top + R(16), w - R(20), h - R(28), "#0e2432");
+      for (let i = 0; i < 9; i++) px(sx - w / 2 + R(16) + i * R(24), top + R(22), R(14), h - R(40), lit ? "#2a6075" : "#132c3a");
+    } else {
+      for (let r = 0; r < 8; r++) {
+        const wy = top + R(14) + r * R(24);
+        if (wy + R(14) > doorTop - R(4)) break;
+        if (wy + R(14) > plateTop && wy < plateTop + R(34)) continue;   // не лезем под табличку
+        for (let i = 0; i < 7; i++) {
+          const wx = sx - w / 2 + R(16) + i * R(30);
+          px(wx, wy, R(18), R(14), "#0d2230");
+          px(wx + 1, wy + 1, R(16), R(12), lit && (i + r) % 3 !== 1 ? "#f0cd8a" : "#16384a");
+        }
+      }
+    }
+    // карниз и крыша
+    px(sx - w / 2 - R(4), top - R(6), w + R(8), R(6), "#0a1b26");
+    px(sx - w / 2 - R(4), top - R(6), w + R(8), 2, "#2d5e74");
+  }
+
+  function drawDoor(sx, label, open, done, sub) {
     const R = G.R, w = G.doorW, h = G.doorH;
     if (sx < -w - 40 || sx > VW + w + 40) return;
     const top = FLOOR_Y - R(8) - h, bot = FLOOR_Y - R(8), ix = sx - w / 2;
@@ -1131,6 +1292,7 @@
     lines.forEach((ln, i) => {
       textFit(ln, sx, py + R(4) + i * R(11), R(8), open ? C.paper : "#55738a", "center", maxW);
     });
+    if (sub) textFit(String(sub).toUpperCase(), sx, py + ph + R(3), R(7), "#6f8aa1", "center", pw);
     px(sx + pw / 2 - R(7), py + R(4), R(4), R(4), open ? "#6ee7a8" : "#6a3030");
     if (done) {
       px(sx - pw / 2 + R(2), py + R(3), R(7), R(7), "#6ee7a8");
@@ -1428,7 +1590,9 @@
     } else if (game.fade > 0) game.fade = Math.max(0, game.fade - dt * 2.6);
 
     ctx.imageSmoothingEnabled = false;
-    if (game.scene === "hub") drawHub(); else drawCorridor();
+    if (game.scene === "street") drawStreet();
+    else if (game.scene === "corridor") drawCorridor();
+    else drawHub();
     drawPlayer(game.x - game.cam, game.facing, Math.floor(game.walkPhase), game.moving, now);
 
     const vg = ctx.createRadialGradient(VW / 2, VH / 2, VH * 0.35, VW / 2, VH / 2, VH * 0.95);
@@ -1447,7 +1611,13 @@
     else {
       let cap = "";
       if (f.kind === "stand") cap = seen.has(f.stand.id) ? "Открыть снова" : "Открыть стенд";
-      else if (f.kind === "door") cap = f.door.open ? "Войти в павильон" : "Закрыто";
+      else if (f.kind === "door") {
+        cap = !f.door.open ? "Закрыто"
+          : f.door.kind === "building" ? "Войти в корпус"
+          : f.door.kind === "course" ? "Войти на курс"
+          : "Войти в раздел";
+      }
+      else if (f.kind === "back") cap = game.scene === "hall" ? "На улицу" : "В корпус";
       else if (f.kind === "exit") cap = "Выход";
       else if (f.kind === "entry") cap = "В вестибюль";
       elPromptCap.textContent = cap;
@@ -1471,7 +1641,50 @@
   });
 
   /* ═══ пуск ════════════════════════════════════════════════════════════ */
-  const doorOfActive = () => DOORS.find((d) => d.pavilion === PID) || DOORS[0];
+  function closedWord(kind) {
+    return kind === "building" ? "Этот корпус ещё закрыт"
+      : kind === "course" ? "Этот курс ещё закрыт" : "Этот раздел ещё закрыт";
+  }
+
+  function openDoor(d) {
+    if (!d.open) { toast(closedWord(d.kind)); return; }
+    if (d.kind === "building") {
+      building = d.ref;
+      setLevel("hall");
+      go("hall", Math.round(240 * U));
+      return;
+    }
+    if (d.kind === "course") {
+      course = d.ref;
+      setLevel("hub");
+      go("hub", Math.round(240 * U));
+      return;
+    }
+    enterPavilion(d.pavilion).then(() => go("corridor", ENTRY_X + Math.round(40 * U)));
+  }
+
+  // Назад на уровень выше, к той двери, из которой вышли.
+  function goBack() {
+    if (game.scene === "corridor") {
+      setLevel("hub");
+      const d = DOORS.find((n) => n.pavilion === PID);
+      go("hub", d ? d.x : Math.round(240 * U));
+      return;
+    }
+    if (game.scene === "hub") {
+      setLevel("hall");
+      const d = DOORS.find((n) => n.ref === course);
+      course = null;
+      go("hall", d ? d.x : Math.round(240 * U));
+      return;
+    }
+    if (game.scene === "hall") {
+      setLevel("street");
+      const d = DOORS.find((n) => n.ref === building);
+      building = null;
+      go("street", d ? d.x : Math.round(240 * U));
+    }
+  }
 
   async function enterPavilion(id) {
     SEED = PAVS[id] || { id, title: id, subtitle: "", stands: [] };
@@ -1509,9 +1722,16 @@
 
   /* ═══ пуск ════════════════════════════════════════════════════════════ */
   (async () => {
-    await loadPavilions(COURSE_DOORS.map((d) => d.pavilion).filter(Boolean));
-    // дверь без загруженного содержания открыть нельзя, иначе пустой коридор
-    DOORS.forEach((d) => { if (d.pavilion && !PAVS[d.pavilion]) d.open = false; });
+    const ids = [];
+    BUILDINGS.forEach((b) => (b.courses || []).forEach((c) => (c.doors || []).forEach((d) => {
+      if (d.pavilion && ids.indexOf(d.pavilion) < 0) ids.push(d.pavilion);
+    })));
+    await loadPavilions(ids);
+    // раздел без загруженного содержания закрываем: пустой коридор хуже честной двери
+    BUILDINGS.forEach((b) => (b.courses || []).forEach((c) => (c.doors || []).forEach((d) => {
+      if (d.pavilion && !PAVS[d.pavilion]) d.open = false;
+    })));
+    setLevel("street");
     syncChrome();
     requestAnimationFrame(frame);
   })();

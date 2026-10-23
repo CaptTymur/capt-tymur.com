@@ -1,0 +1,323 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Skipi Education — павильон «Коммуникация»</title>
+<meta name="robots" content="noindex, nofollow, noarchive">
+<meta name="referrer" content="no-referrer">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' fill='%230c1a26'/><rect x='3' y='3' width='10' height='2' fill='%23f0a830'/><rect x='3' y='7' width='7' height='2' fill='%23e6eef6'/><rect x='3' y='11' width='10' height='2' fill='%232aa0a0'/></svg>">
+<style>
+  :root{
+    --ink:#07101a; --panel:#0e1d2b; --panel-2:#13293c; --line:#20425c; --line-2:#1b3448;
+    --amber:#f0a830; --teal:#2aa0a0; --paper:#e6eef6; --muted:#8aa4bb;
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  }
+  *{box-sizing:border-box}
+  [hidden]{display:none !important}
+  html,body{height:100%}
+  body{
+    margin:0; background:var(--ink); color:var(--paper); font-family:var(--sans);
+    display:flex; align-items:center; justify-content:center; overflow:hidden;
+    -webkit-tap-highlight-color:transparent;
+  }
+  body::before{
+    content:""; position:fixed; inset:0; pointer-events:none; z-index:60;
+    background:radial-gradient(130% 100% at 50% 45%, rgba(0,0,0,0) 48%, rgba(0,0,0,.55) 100%);
+  }
+  #stage{position:relative; line-height:0}
+  #screen{display:block; image-rendering:pixelated; image-rendering:crisp-edges;
+    background:#060d14; box-shadow:0 0 0 1px #16293a, 0 30px 80px rgba(0,0,0,.65)}
+  #overlay{position:absolute; inset:0; line-height:normal; pointer-events:none;
+    font-family:var(--mono); user-select:none}
+
+  /* ── приборы ───────────────────────────────────────── */
+  .hud-top{position:absolute; left:0; right:0; top:0; display:flex; justify-content:space-between;
+    align-items:flex-start; padding:14px 16px; gap:12px}
+  .hud-right{display:flex; align-items:flex-start; gap:8px}
+  .plate{background:rgba(8,18,28,.82); border:1px solid var(--line); border-top:2px solid var(--amber);
+    padding:6px 10px 7px; font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:var(--paper)}
+  .plate small{display:block; font-size:9px; letter-spacing:.18em; color:var(--muted); margin-top:3px}
+  .plate.count{border-top-color:var(--teal); text-align:right}
+  .plate.count b{font-size:14px; letter-spacing:.06em; color:var(--amber)}
+  .tool{pointer-events:auto; cursor:pointer; font-family:var(--mono); font-size:10px; letter-spacing:.14em;
+    text-transform:uppercase; padding:8px 11px; background:rgba(8,18,28,.86); color:var(--paper);
+    border:1px solid var(--line); border-top:2px solid var(--teal)}
+  .tool:hover{border-color:var(--teal); color:#9fe3e3}
+  .tool.add{border-top-color:var(--amber)}
+  .tool.add:hover{border-color:var(--amber); color:#ffd98a}
+
+  .rail{position:absolute; left:16px; right:16px; bottom:14px; height:26px}
+  .rail-line{position:absolute; left:0; right:0; top:12px; height:2px; background:#1b3448}
+  .rail-dot{position:absolute; top:7px; width:12px; height:12px; margin-left:-6px;
+    background:#0e1d2b; border:2px solid #2d5473; transform:rotate(45deg)}
+  .rail-dot.seen{background:var(--teal); border-color:#7fd6d6}
+  .rail-you{position:absolute; top:0; width:2px; height:26px; margin-left:-1px; background:var(--amber);
+    box-shadow:0 0 8px rgba(240,168,48,.8)}
+  .rail-cap{position:absolute; top:4px; width:8px; height:18px; margin-left:-4px;
+    border:2px solid #2d5473; background:#0e1d2b}
+
+  .prompt{position:absolute; left:50%; bottom:48px; transform:translateX(-50%); opacity:0;
+    transition:opacity .12s; display:flex; align-items:stretch; white-space:nowrap}
+  .prompt.on{opacity:1}
+  .prompt .cap{background:var(--amber); color:#1a1205; font-size:10px; font-weight:700;
+    letter-spacing:.12em; text-transform:uppercase; padding:6px 11px; display:flex; align-items:center}
+  .prompt .key{background:rgba(8,18,28,.92); border:1px solid var(--line); border-left:none;
+    color:var(--muted); font-size:9px; letter-spacing:.12em; padding:6px 10px; display:flex; align-items:center}
+  .prompt .tip{display:none}
+
+  .toast{position:absolute; left:50%; bottom:92px; transform:translateX(-50%); opacity:0;
+    transition:opacity .18s; background:rgba(8,18,28,.94); border:1px solid var(--line);
+    border-left:2px solid var(--teal); padding:8px 14px; font-size:11px; letter-spacing:.08em; color:var(--paper)}
+  .toast.on{opacity:1}
+
+  .touch{position:fixed; left:0; right:0; bottom:0; z-index:30; display:none;
+    justify-content:space-between; padding:0 16px calc(18px + env(safe-area-inset-bottom)); pointer-events:none}
+  body.is-touch .touch{display:flex}
+  .tbtn{pointer-events:auto; width:62px; height:62px; border:1px solid var(--line);
+    background:rgba(10,22,34,.8); color:var(--paper); font-size:22px; display:grid; place-items:center;
+    font-family:var(--mono)}
+  .tbtn:active{background:rgba(240,168,48,.3)}
+  .tpair{display:flex; gap:12px}
+  .tbtn.act{border-top:2px solid var(--amber); font-size:11px; letter-spacing:.1em}
+
+  /* ── титул ─────────────────────────────────────────── */
+  #title{position:fixed; inset:0; z-index:40; display:grid; place-items:center;
+    background:radial-gradient(90% 70% at 50% 40%, #11283b 0%, #060d14 70%)}
+  #title.hide{display:none}
+  .title-box{text-align:center; padding:0 24px; max-width:640px}
+  .title-kicker{font-family:var(--mono); font-size:11px; letter-spacing:.42em; color:var(--teal);
+    text-transform:uppercase; margin-bottom:18px}
+  .title-main{font-family:var(--mono); font-weight:700; font-size:clamp(28px,6vw,54px);
+    letter-spacing:.1em; margin:0; text-shadow:0 4px 0 #0a1622, 0 0 34px rgba(42,160,160,.35)}
+  .title-sub{font-family:var(--mono); font-size:clamp(11px,2.2vw,15px); letter-spacing:.3em;
+    text-transform:uppercase; color:var(--amber); margin:14px 0 0}
+  .title-rule{width:72px; height:2px; background:var(--amber); margin:26px auto}
+  .title-note{font-size:14px; line-height:1.65; color:var(--muted); margin:0 0 26px}
+  .btn{font-family:var(--mono); font-size:12px; letter-spacing:.18em; text-transform:uppercase;
+    padding:12px 24px; border:1px solid var(--amber); color:#1a1205; background:var(--amber); cursor:pointer}
+  .btn:hover{background:#ffc357; border-color:#ffc357}
+  .btn.ghost{background:transparent; color:var(--paper); border-color:var(--line)}
+  .btn.ghost:hover{border-color:var(--teal); color:#9fe3e3}
+  .btn.danger{background:transparent; color:#e08a7a; border-color:#5a3029}
+  .btn.danger:hover{border-color:#e0674a; color:#ffb3a1}
+  .btn.sm{padding:8px 13px; font-size:10px; letter-spacing:.12em}
+  .title-keys{font-family:var(--mono); font-size:10px; letter-spacing:.16em; color:#5f7b93;
+    margin-top:22px; text-transform:uppercase}
+
+  /* ── общий диалог ──────────────────────────────────── */
+  .sheet{position:fixed; inset:0; z-index:50; display:none; align-items:center; justify-content:center;
+    padding:24px; background:rgba(4,9,14,.74); backdrop-filter:blur(3px)}
+  .sheet.on{display:flex}
+  .card{width:min(640px,100%); max-height:min(86vh,820px); overflow:auto; background:var(--panel);
+    border:1px solid var(--line); border-top:3px solid var(--amber); box-shadow:0 30px 90px rgba(0,0,0,.7)}
+  .card-head{padding:22px 26px 18px; border-bottom:1px solid var(--line-2); position:relative}
+  .card-no{font-family:var(--mono); font-size:10px; letter-spacing:.3em; color:var(--teal); text-transform:uppercase}
+  .card-title{font-family:var(--mono); font-size:22px; font-weight:700; margin:9px 0 0}
+  .card-lead{margin:12px 0 0; font-size:15px; line-height:1.55; color:#b9cbdb}
+  .card-x{position:absolute; top:16px; right:16px; width:30px; height:30px; border:1px solid var(--line);
+    background:transparent; color:var(--muted); cursor:pointer; font-size:16px; font-family:var(--mono)}
+  .card-x:hover{color:var(--paper); border-color:var(--amber)}
+  .card-body{padding:20px 26px 4px}
+  .card-body p{margin:0 0 14px; font-size:15px; line-height:1.68; color:#d2dfea}
+  .card-h{font-family:var(--mono); font-size:10px; letter-spacing:.26em; text-transform:uppercase;
+    color:var(--amber); margin:22px 0 10px}
+  .card ul{list-style:none; margin:0 0 14px; padding:0}
+  .card li{position:relative; padding-left:20px; margin-bottom:9px; font-size:14px; line-height:1.6; color:#c6d5e3}
+  .card li::before{content:""; position:absolute; left:2px; top:8px; width:6px; height:6px; background:var(--teal)}
+  .card-note{margin:18px 26px 0; padding:12px 14px; background:#0b1724; border-left:2px solid var(--teal);
+    font-size:13px; line-height:1.6; color:#9fb6c9}
+  .card-foot{display:flex; justify-content:space-between; align-items:center; gap:10px;
+    padding:18px 26px 22px; margin-top:16px; border-top:1px solid var(--line-2); flex-wrap:wrap}
+  .card-foot .grp{display:flex; gap:8px; flex-wrap:wrap}
+  .draft{font-family:var(--mono); font-size:9px; letter-spacing:.18em; text-transform:uppercase;
+    color:#6f8aa1; border:1px solid #23415a; padding:4px 8px}
+  .shot{display:block; width:100%; margin:0 0 16px; border:1px solid var(--line-2); background:#0a141d}
+  .shot-cap{font-size:12px; color:var(--muted); margin:-10px 0 16px; line-height:1.5}
+
+  /* ── редактор ──────────────────────────────────────── */
+  #editor .card{border-top-color:var(--teal)}
+  .field{padding:0 26px; margin-bottom:14px}
+  .field label{display:block; font-family:var(--mono); font-size:9px; letter-spacing:.22em;
+    text-transform:uppercase; color:var(--muted); margin-bottom:6px}
+  .field input[type=text], .field textarea{
+    width:100%; background:#0a1724; border:1px solid var(--line-2); color:var(--paper);
+    font-family:var(--sans); font-size:14px; padding:9px 11px; line-height:1.5; resize:vertical}
+  .field input:focus, .field textarea:focus{outline:none; border-color:var(--teal)}
+  .field .hint{font-size:11px; color:#5f7b93; margin-top:5px; line-height:1.5}
+  .row{display:flex; gap:12px; padding:0 26px; margin-bottom:14px; flex-wrap:wrap}
+  .row .field{padding:0; margin:0; flex:1 1 140px}
+  .drop{margin:0 26px 16px; border:1px dashed #2b5168; background:#0a1724; padding:18px;
+    text-align:center; cursor:pointer; transition:border-color .15s, background .15s}
+  .drop:hover, .drop.over{border-color:var(--teal); background:#0c1e2d}
+  .drop .big{font-family:var(--mono); font-size:11px; letter-spacing:.16em; text-transform:uppercase; color:var(--paper)}
+  .drop .sub{font-size:12px; color:#5f7b93; margin-top:7px; line-height:1.5}
+  .drop img{display:block; max-width:100%; max-height:240px; margin:0 auto 12px; border:1px solid var(--line-2)}
+  .swatches{display:flex; gap:6px; flex-wrap:wrap}
+  .sw{width:26px; height:26px; border:2px solid transparent; cursor:pointer}
+  .sw.on{border-color:var(--paper)}
+  .icons{display:flex; gap:6px; flex-wrap:wrap}
+  .ic{width:34px; height:34px; border:1px solid var(--line-2); background:#0a1724; cursor:pointer;
+    display:grid; place-items:center; font-size:9px; font-family:var(--mono); color:var(--muted);
+    letter-spacing:.04em; text-transform:uppercase}
+  .ic.on{border-color:var(--teal); color:#9fe3e3; background:#0c2230}
+  .kv{padding:0 26px 10px; font-size:12px; line-height:1.65; color:var(--muted)}
+  .kv b{color:var(--paper); font-weight:600}
+  @media (max-width:560px){ .card-title{font-size:18px} .card-body p{font-size:14px} }
+</style>
+</head>
+<body>
+
+<div id="stage">
+  <canvas id="screen" width="384" height="216"></canvas>
+  <div id="overlay">
+    <div class="hud-top">
+      <div class="plate" id="hud-where">Вестибюль<small>Skipi Education</small></div>
+      <div class="hud-right">
+        <button class="tool add" id="btn-add" hidden>+ стенд</button>
+        <button class="tool" id="btn-data" hidden>данные</button>
+        <div class="plate count" id="hud-count" hidden><b>0/0</b><small>стенды</small></div>
+      </div>
+    </div>
+    <div class="rail" id="rail" hidden><div class="rail-line"></div></div>
+    <div class="prompt" id="prompt">
+      <div class="cap" id="prompt-cap">Открыть</div>
+      <div class="key" id="prompt-key">↑ или пробел</div>
+      <div class="tip"></div>
+    </div>
+    <div class="toast" id="toast"></div>
+  </div>
+</div>
+
+<div class="touch">
+  <div class="tpair">
+    <button class="tbtn" data-hold="left" aria-label="Влево">←</button>
+    <button class="tbtn" data-hold="right" aria-label="Вправо">→</button>
+  </div>
+  <button class="tbtn act" data-hold="act" aria-label="Действие">ОК</button>
+</div>
+
+<div id="title">
+  <div class="title-box">
+    <div class="title-kicker">Skipi Education</div>
+    <h1 class="title-main">КОММУНИКАЦИЯ</h1>
+    <div class="title-sub">павильон&nbsp;01</div>
+    <div class="title-rule"></div>
+    <p class="title-note">Вы заходите в павильон и идёте по коридору. Вдоль коридора — стенды.
+      Подойдите к стенду и откройте его. Регистрации нет.</p>
+    <button class="btn" id="start">Войти</button>
+    <div class="title-keys">← → идти · ↑ войти и открыть · ESC закрыть</div>
+  </div>
+</div>
+
+<!-- карточка стенда -->
+<div id="modal" class="sheet" role="dialog" aria-modal="true">
+  <div class="card">
+    <div class="card-head">
+      <button class="card-x" id="card-x" aria-label="Закрыть">×</button>
+      <div class="card-no" id="card-no">Стенд 01</div>
+      <h2 class="card-title" id="card-title">—</h2>
+      <p class="card-lead" id="card-lead"></p>
+    </div>
+    <div class="card-body" id="card-body"></div>
+    <div class="card-note" id="card-note" hidden></div>
+    <div class="card-foot">
+      <span class="draft" id="card-draft" hidden>черновик содержания</span>
+      <div class="grp">
+        <button class="btn ghost sm" id="card-edit">Править стенд</button>
+        <button class="btn ghost" id="card-next">Дальше&nbsp;→</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- редактор стенда -->
+<div id="editor" class="sheet" role="dialog" aria-modal="true">
+  <div class="card">
+    <div class="card-head">
+      <button class="card-x" id="ed-x" aria-label="Закрыть">×</button>
+      <div class="card-no" id="ed-no">Стенд</div>
+      <h2 class="card-title">Содержание стенда</h2>
+    </div>
+
+    <div class="field" style="margin-top:18px"><label>Изображение на стенде</label></div>
+    <div class="drop" id="ed-drop" tabindex="0">
+      <img id="ed-img" hidden alt="">
+      <div class="big" id="ed-drop-big">Вставьте Ctrl+V · перетащите файл · нажмите, чтобы выбрать</div>
+      <div class="sub" id="ed-drop-sub">Картинка ляжет и на стенд в коридоре, и в карточку. Большие снимки уменьшаются сами.</div>
+    </div>
+    <div class="row" id="ed-img-actions" hidden>
+      <button class="btn ghost sm" id="ed-img-clear">Убрать изображение</button>
+    </div>
+    <div class="field"><label>Подпись под изображением</label>
+      <input type="text" id="ed-caption" placeholder="необязательно"></div>
+
+    <div class="row">
+      <div class="field"><label>Надпись на стенде</label>
+        <input type="text" id="ed-short" maxlength="10" placeholder="до 10 знаков">
+        <div class="hint">То, что видно издалека в коридоре.</div></div>
+      <div class="field"><label>Заголовок карточки</label>
+        <input type="text" id="ed-title" placeholder="Название стенда"></div>
+    </div>
+
+    <div class="field"><label>Одной фразой</label>
+      <input type="text" id="ed-lead" placeholder="Зачем этот стенд"></div>
+    <div class="field"><label>Текст — абзац с новой строки</label>
+      <textarea id="ed-body" rows="6"></textarea></div>
+    <div class="field"><label>Список — пункт с новой строки</label>
+      <textarea id="ed-points" rows="4"></textarea></div>
+    <div class="row">
+      <div class="field"><label>Заголовок списка</label>
+        <input type="text" id="ed-points-title" placeholder="Коротко"></div>
+      <div class="field"><label>Сноска</label>
+        <input type="text" id="ed-note" placeholder="необязательно"></div>
+    </div>
+    <div class="field"><label>Пиктограмма — если изображения нет</label>
+      <div class="icons" id="ed-icons"></div></div>
+    <div class="field"><label>Цвет стенда</label>
+      <div class="swatches" id="ed-colors"></div></div>
+
+    <div class="card-foot">
+      <div class="grp">
+        <button class="btn danger sm" id="ed-del">Удалить</button>
+        <button class="btn ghost sm" id="ed-dup">Дублировать</button>
+        <button class="btn ghost sm" id="ed-left">←</button>
+        <button class="btn ghost sm" id="ed-right">→</button>
+      </div>
+      <button class="btn" id="ed-done">Готово</button>
+    </div>
+  </div>
+</div>
+
+<!-- данные -->
+<div id="data" class="sheet" role="dialog" aria-modal="true">
+  <div class="card">
+    <div class="card-head">
+      <button class="card-x" id="dt-x" aria-label="Закрыть">×</button>
+      <div class="card-no">Данные павильона</div>
+      <h2 class="card-title">Где живут стенды</h2>
+      <p class="card-lead" id="dt-lead"></p>
+    </div>
+    <div class="kv" style="padding-top:18px">
+      Стенды, которые вы создаёте и правите, хранятся <b>в этом браузере на этом компьютере</b>.
+      Ни учётной записи, ни сервера сейчас нет, поэтому на другой ноутбук они сами не переедут.
+      Чтобы перенести — выгрузите файл здесь и загрузите его там.
+    </div>
+    <div class="row" style="margin-top:8px">
+      <button class="btn ghost sm" id="dt-export">Выгрузить файл</button>
+      <button class="btn ghost sm" id="dt-import">Загрузить файл</button>
+      <button class="btn danger sm" id="dt-reset">Вернуть исходные стенды</button>
+    </div>
+    <div class="kv" id="dt-size"></div>
+    <div class="card-foot"><span></span><button class="btn" id="dt-done">Закрыть</button></div>
+  </div>
+</div>
+
+<input type="file" id="file-img" accept="image/*" hidden>
+<input type="file" id="file-json" accept="application/json,.json" hidden>
+
+<script src="content/communication.js"></script>
+<script src="game.js"></script>
+</body>
+</html>

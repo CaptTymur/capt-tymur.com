@@ -15,8 +15,8 @@
   const MONO = 'ui-monospace, "SF Mono", Menlo, Consolas, monospace';
   let GAP = 317, FIRST_X = 396, ENTRY_X = 106;   // пересчитываются в resize
   let HUB_W = 1478;
-  const DOOR_BASE = [360, 620, 880];
-  const DOORS = [];                       // заполняется, когда известно имя павильона
+  const DOOR_STEP = 300, DOOR_FIRST = 420;
+  const DOORS = [];                       // заполняется из content/course.js
   const PH = 68;                          // рост человечка в игровых пикселях
 
   const cv = document.getElementById("screen");
@@ -62,7 +62,7 @@
     G.doorW = R(76); G.doorH = R(112);
     G.reach = R(52);
     GAP = R(240); FIRST_X = R(300); ENTRY_X = R(80);
-    HUB_W = R(1120);
+    HUB_W = R(DOOR_FIRST + Math.max(1, DOORS.length) * DOOR_STEP);
     DOORS.forEach((d) => { d.x = R(d.base); });
   }
   resize();
@@ -113,6 +113,21 @@
     ctx.fillStyle = color;
     ctx.fillText(s, x | 0, y | 0);
     ctx.textAlign = "left";
+  }
+
+  // Длинное название двери режется на две строки по ближайшему к середине пробелу.
+  function splitLabel(label, size, maxW) {
+    ctx.font = "700 " + size + "px " + MONO;
+    if (ctx.measureText(label).width <= maxW) return [label];
+    const words = label.split(" ");
+    if (words.length < 2) return [label];
+    let best = 1, diff = Infinity;
+    for (let i = 1; i < words.length; i++) {
+      const a = words.slice(0, i).join(" "), b = words.slice(i).join(" ");
+      const d = Math.abs(ctx.measureText(a).width - ctx.measureText(b).width);
+      if (d < diff) { diff = d; best = i; }
+    }
+    return [words.slice(0, best).join(" "), words.slice(best).join(" ")];
   }
 
   function icon(name, x, y, mul, color) {
@@ -304,11 +319,20 @@
   }
 
   /* ═══ состояние игры ══════════════════════════════════════════════════ */
-  DOOR_BASE.forEach((base, i) => DOORS.push({
-    base, x: Math.round(base * U),
-    label: i === 0 ? (SEED.title || "ПАВИЛЬОН").toUpperCase() : "СКОРО",
-    open: i === 0
-  }));
+  const COURSE = window.SKIPI_COURSE || {};
+  const COURSE_DOORS = Array.isArray(COURSE.doors) && COURSE.doors.length
+    ? COURSE.doors
+    : [{ label: SEED.title || "Павильон", open: true, pavilion: PID }];
+  COURSE_DOORS.forEach((d, i) => {
+    const base = DOOR_FIRST + i * DOOR_STEP;
+    DOORS.push({
+      base, x: Math.round(base * U),
+      label: String(d.label || "—").toUpperCase(),
+      open: !!d.open,
+      pavilion: d.pavilion || ""
+    });
+  });
+  HUB_W = Math.round((DOOR_FIRST + COURSE_DOORS.length * DOOR_STEP) * U);
   const game = {
     scene: "hub", x: Math.round(170 * U), facing: 1, walkPhase: 0, moving: false,
     cam: 0, fade: 1, fadeDir: -1, fadeThen: null,
@@ -395,7 +419,11 @@
     if (uiOpen() || game.fadeDir === 1) return;
     const f = game.focus;
     if (!f) return;
-    if (f.kind === "door") { f.door.open ? go("corridor", ENTRY_X + Math.round(40 * U)) : toast("Этот павильон ещё закрыт"); return; }
+    if (f.kind === "door") {
+      if (f.door.open) go("corridor", ENTRY_X + Math.round(40 * U));
+      else toast("Раздел «" + f.door.label.toLowerCase() + "» ещё закрыт");
+      return;
+    }
     if (f.kind === "entry") { go("hub", DOORS[0].x); return; }
     if (f.kind === "exit") { openFinal(); return; }
     openStand(f.stand);
@@ -434,28 +462,42 @@
     $("card-lead").hidden = !s.lead;
     const body = $("card-body");
     body.innerHTML = "";
+    // Со слайдом карточка раскладывается в две колонки: слева инфографика,
+    // справа текст. Без слайда — одна колонка во всю ширину.
+    body.classList.toggle("two-col", !!s.image);
+    let col = body;
     if (s.image) {
+      const fig = document.createElement("figure");
+      fig.className = "col-img";
       const im = document.createElement("img");
       im.className = "shot"; im.src = s.image; im.alt = s.caption || s.title || "";
-      body.appendChild(im);
-      if (s.caption) { const c = document.createElement("div"); c.className = "shot-cap"; c.textContent = s.caption; body.appendChild(c); }
+      fig.appendChild(im);
+      if (s.caption) {
+        const c = document.createElement("figcaption");
+        c.className = "shot-cap"; c.textContent = s.caption;
+        fig.appendChild(c);
+      }
+      body.appendChild(fig);
+      col = document.createElement("div");
+      col.className = "col-txt";
+      body.appendChild(col);
     }
-    (s.body || []).forEach((p) => { const n = document.createElement("p"); n.textContent = p; body.appendChild(n); });
+    (s.body || []).forEach((p) => { const n = document.createElement("p"); n.textContent = p; col.appendChild(n); });
     if (s.points && s.points.length) {
       const h = document.createElement("div");
       h.className = "card-h"; h.style.color = s.accent; h.textContent = s.pointsTitle || "Коротко";
-      body.appendChild(h);
+      col.appendChild(h);
       const ul = document.createElement("ul");
       s.points.forEach((t) => { const li = document.createElement("li"); li.textContent = t; ul.appendChild(li); });
-      body.appendChild(ul);
+      col.appendChild(ul);
     }
     if (!s.image && !(s.body || []).length && !(s.points || []).length) {
       const n = document.createElement("p");
       n.style.color = "#6f8aa1";
       n.textContent = "Стенд пока пустой. Нажмите «Править стенд» — и положите на него изображение или текст.";
-      body.appendChild(n);
+      col.appendChild(n);
     }
-    renderDownloads(body, s);
+    renderDownloads(col, s);
     $("card-note").textContent = s.note || "";
     $("card-note").hidden = !s.note;
     $("card-draft").hidden = !s.draft;
@@ -515,6 +557,7 @@
     $("card-lead").textContent = "Открыто стендов: " + done + " из " + stands.length + ".";
     const body = $("card-body");
     body.innerHTML = "";
+    body.classList.remove("two-col");
     const p = document.createElement("p");
     p.textContent = all
       ? "Павильон «" + SEED.title + "» пройден целиком. Отметки о стендах остаются в этом браузере."
@@ -791,7 +834,7 @@
     btnData.hidden = !corridor || !!GUEST;
     elWhere.innerHTML = corridor
       ? esc(SEED.title) + "<small>" + esc(SEED.subtitle || "Skipi Education") + "</small>"
-      : "Вестибюль<small>Skipi Education</small>";
+      : "Вестибюль<small>" + esc(COURSE.title || "Skipi Education") + "</small>";
     if (corridor) {
       const done = stands.filter((s) => seen.has(s.id)).length;
       elCount.innerHTML = "<b>" + done + "/" + stands.length + "</b><small>стенды</small>";
@@ -813,18 +856,21 @@
     }
     const note = document.querySelector("#title .title-note");
     if (note) {
-      note.textContent = GUEST.name + ", это ваш персональный вход. Вы заходите в павильон и идёте "
-        + "по коридору; вдоль коридора — стенды. Подойдите к стенду и откройте его. Регистрации нет.";
+      note.textContent = GUEST.name + ", это ваш персональный вход на курс. В вестибюле курса — двери "
+        + "разделов; открыт первый, «Коммуникация». Внутри коридор со стендами: подойдите к стенду "
+        + "и откройте его. Регистрации нет.";
     }
   })();
 
   (function nameFromContent() {
     const main = document.querySelector("#title .title-main");
     const sub = document.querySelector("#title .title-sub");
-    if (main) main.textContent = (SEED.title || "ПАВИЛЬОН").toUpperCase();
-    if (sub) sub.textContent = SEED.subtitle || "";
-    if (sub) sub.hidden = !SEED.subtitle;
-    document.title = "Skipi Education — павильон «" + (SEED.title || "") + "»";
+    const kick = document.querySelector("#title .title-kicker");
+    const course = COURSE.title || SEED.title || "";
+    if (kick) kick.textContent = COURSE.kicker || "Skipi Education";
+    if (main) main.textContent = course.toUpperCase();
+    if (sub) { sub.textContent = (COURSE.sub || "Курс").toUpperCase(); sub.hidden = false; }
+    document.title = "Skipi Education — курс «" + course + "»";
   })();
   let titleShown = true;
   function startGame() {
@@ -868,8 +914,8 @@
     px(0, R(62), VW, 2, C.wallTrim);
     px(0, FLOOR_Y - R(10), VW, R(10), C.skirt);
 
-    const sign = (SEED.hallSign && SEED.hallSign.length === 2)
-      ? SEED.hallSign : ["КУРС", "КАПИТАН ГРАЖДАНСКОГО СУДНА"];
+    const sign = [(COURSE.sub || "Курс").toUpperCase(),
+                  (COURSE.title || SEED.title || "").toUpperCase()];
     const sw = R(268), sh = R(46), sy = R(66), sx0 = R(50) - cam;
     if (sx0 > -sw - 40 && sx0 < VW + 60) {
       px(sx0 - 2, sy - 2, sw + 4, sh + 4, "#0b1b27");
@@ -907,10 +953,14 @@
       px(ix + R(8), top + R(10), w - R(16), 1, "#1b3647");
       px(ix, bot - R(3), w, R(3), "#1a2b36");
     }
-    const pw = R(96), ph = R(16), py = top - R(22);
+    const pw = R(136), maxW = pw - R(24);
+    const lines = splitLabel(label, R(8), maxW);
+    const ph = R(7) + lines.length * R(11), py = top - ph - R(7);
     px(sx - pw / 2, py, pw, ph, "#0a1824");
     px(sx - pw / 2, py, pw, 2, open ? C.amber : "#24404f");
-    textFit(label, sx, py + R(5), R(8), open ? C.paper : "#55738a", "center", pw - R(22));
+    lines.forEach((ln, i) => {
+      textFit(ln, sx, py + R(4) + i * R(11), R(8), open ? C.paper : "#55738a", "center", maxW);
+    });
     px(sx + pw / 2 - R(7), py + R(4), R(4), R(4), open ? "#6ee7a8" : "#6a3030");
     if (done) {
       px(sx - pw / 2 + R(2), py + R(3), R(7), R(7), "#6ee7a8");

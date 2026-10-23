@@ -220,6 +220,23 @@
 
   const newId = () => "s" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
 
+  /* Отпечаток содержания из файла. Нужен, чтобы отличить «человек правил стенды
+     у себя» от «автор курса выложил новое содержание». Берём то, что меняется
+     при смысловой правке: состав и порядок стендов, надписи, слайды, объём текста. */
+  function fingerprint(list) {
+    const s = JSON.stringify((list || []).map((x) => [
+      x.id, x.short, x.title, x.image,
+      (x.images || []).map((i) => i.src),
+      (x.body || []).length, (x.points || []).length,
+      (x.downloads || []).map((d) => d.file)
+    ]));
+    let h = 5381;
+    for (let i = 0; i < s.length; i++) h = (((h * 33) ^ s.charCodeAt(i)) >>> 0);
+    return h.toString(36) + "." + s.length.toString(36);
+  }
+  const SEED_FP = fingerprint(SEED.stands);
+  let lastBackupKey = null;
+
   function normalize(raw, i) {
     return {
       id: raw.id || newId(),
@@ -274,7 +291,10 @@
       image: s.image, caption: s.caption, images: s.images, videos: s.videos, downloads: s.downloads,
       draft: s.draft, custom: s.custom
     }));
-    await storeSet(PID, { version: 1, savedAt: new Date().toISOString(), stands: plain });
+    await storeSet(PID, {
+      version: 2, savedAt: new Date().toISOString(),
+      seedFingerprint: SEED_FP, stands: plain
+    });
   }
   function markSeen(id) {
     seen.add(id);
@@ -854,7 +874,22 @@
   });
 
   /* ═══ данные: выгрузка, загрузка, сброс ═══════════════════════════════ */
-  btnData.addEventListener("click", () => {
+  btnData.addEventListener("click", async () => {
+    const backup = await storeGet(PID + "/backup");
+    const btn = $("dt-restore");
+    if (btn) {
+      btn.hidden = !(backup && backup.stands && backup.stands.length);
+      if (!btn.hidden) {
+        btn.textContent = "Вернуть мой прежний набор (" + backup.stands.length + ")";
+        btn.onclick = async () => {
+          if (!confirm("Заменить текущие " + stands.length + " стендов на ваши прежние "
+            + backup.stands.length + "?")) return;
+          stands = backup.stands.map(normalize);
+          await save(); relayout(); closeSheet(sheetData);
+          toast("Вернул прежний набор");
+        };
+      }
+    }
     const bytes = new Blob([JSON.stringify(stands)]).size;
     const withImg = stands.filter((s) => s.image).length;
     $("dt-lead").textContent = stands.length + " стендов, из них с изображением " + withImg + ".";
@@ -1401,9 +1436,31 @@
   /* ═══ пуск ════════════════════════════════════════════════════════════ */
   (async () => {
     const saved = await storeGet(PID);
-    const list = saved && Array.isArray(saved.stands) && saved.stands.length ? saved.stands : (SEED.stands || []);
+    const hasLocal = saved && Array.isArray(saved.stands) && saved.stands.length;
+    let list = SEED.stands || [];
+    let replaced = false;
+
+    if (hasLocal) {
+      if (saved.seedFingerprint === SEED_FP) {
+        list = saved.stands;                       // файл не менялся — работаем с местным набором
+      } else {
+        // Автор курса выложил другое содержание. Местный набор не теряем,
+        // но на экране должно быть опубликованное, иначе человек смотрит старое.
+        lastBackupKey = PID + "/backup";
+        await storeSet(lastBackupKey, {
+          backedUpAt: new Date().toISOString(),
+          seedFingerprint: saved.seedFingerprint || "",
+          stands: saved.stands
+        });
+        replaced = true;
+      }
+    }
     stands = list.map(normalize);
+    await save();
     relayout();
     requestAnimationFrame(frame);
+    if (replaced) {
+      setTimeout(() => toast("Содержание обновлено автором курса. Ваш прежний набор сохранён в резерве"), 900);
+    }
   })();
 })();

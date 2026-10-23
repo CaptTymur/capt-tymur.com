@@ -150,6 +150,32 @@
   .draft{font-family:var(--mono); font-size:9px; letter-spacing:.18em; text-transform:uppercase;
     color:#6f8aa1; border:1px solid #23415a; padding:4px 8px}
   .shot{display:block; width:100%; margin:0 0 16px; border:1px solid var(--line-2); background:#0a141d}
+
+  /* ── стенд как комната: карточка занимает весь кадр, внизу остаётся пол,
+        на котором стоит человечек. Старая карточка посередине осталась для
+        выхода и прочих диалогов. ───────────────────────────────────────── */
+  #modal.room-mode{display:none; background:transparent; padding:0; backdrop-filter:none}
+  #modal.room-mode.on{display:block}
+  #modal.room-mode .card{
+    position:absolute; left:0; top:0; width:100%; margin:0; max-width:none; max-height:none;
+    border:none; border-top:3px solid var(--amber); border-radius:0;
+    background:rgba(8,19,28,.90); box-shadow:none; overflow:auto;
+  }
+  #modal.room-mode .card-head{padding:20px 34px 16px}
+  #modal.room-mode .card-body{padding:18px 34px 4px}
+  #modal.room-mode .card-note{margin:16px 34px 0}
+  #modal.room-mode .card-foot{padding:16px 34px 20px}
+  /* запас снизу, чтобы последняя строка не резалась о край комнаты */
+  #modal.room-mode .card{padding-bottom:26px}
+  #modal.room-mode .card-body.two-col{grid-template-columns:minmax(0,1.05fr) minmax(0,1fr); gap:34px}
+  /* правая колонка не заезжает туда, где стоит человечек */
+  #modal.room-mode .col-txt{padding-right:clamp(0px, 9vw, 170px)}
+  .room-fig{position:absolute; right:clamp(12px, 4vw, 90px); pointer-events:none;
+    image-rendering:pixelated; image-rendering:crisp-edges; z-index:3}
+  @media (max-width:980px){
+    #modal.room-mode .card-body.two-col{grid-template-columns:1fr; gap:0}
+    #modal.room-mode .col-txt{padding-right:0}
+  }
   .dl-h{font-family:var(--mono); font-size:10px; letter-spacing:.26em; text-transform:uppercase;
     color:var(--amber); margin:22px 0 10px}
   .dl{display:flex; align-items:center; gap:12px; padding:11px 13px; margin-bottom:8px;

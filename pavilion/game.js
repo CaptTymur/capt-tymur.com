@@ -20,7 +20,8 @@
   const PH = 68;                          // рост человечка в игровых пикселях
 
   const cv = document.getElementById("screen");
-  const ctx = cv.getContext("2d", { alpha: false });
+  let ctx = cv.getContext("2d", { alpha: false });
+  const mainCtx = ctx;
   let scale = 3;
 
   function resize() {
@@ -529,7 +530,7 @@
   function openSheet(el) { el.classList.add("on"); }
   function closeSheet(el) {
     el.classList.remove("on");
-    if (el === sheetCard) carousel = null;   // карусель живёт только в открытой карточке
+    if (el === sheetCard) { carousel = null; leaveRoom(); }
     syncChrome();
   }
   function closeTop() {
@@ -557,6 +558,41 @@
       [...carousel.dots.children].forEach((d, k) => d.classList.toggle("on", k === i));
     }
   }
+  // Открытый стенд — это комната: карточка во весь кадр, внизу полоса пола,
+  // на ней стоит человечек справа. Поэтому сцена подменяется, а не затемняется.
+  const ROOM = { floor: 0 };
+  let sceneBeforeRoom = "corridor";
+
+  function roomFloorY() { return VH - Math.round(46 * U); }
+
+  function placeRoomCard() {
+    if (!sheetCard.classList.contains("room-mode")) return;
+    const r = cv.getBoundingClientRect();
+    sheetCard.style.left = r.left + "px";
+    sheetCard.style.top = r.top + "px";
+    sheetCard.style.width = r.width + "px";
+    sheetCard.style.height = r.height + "px";
+    const card = sheetCard.querySelector(".card");
+    if (card) card.style.height = Math.round(roomFloorY() * scale) + "px";
+    placeFig();
+  }
+
+  function enterRoom() {
+    sceneBeforeRoom = game.scene === "room" ? sceneBeforeRoom : game.scene;
+    game.scene = "room";
+    sheetCard.classList.add("room-mode");
+    placeRoomCard();
+  }
+  function leaveRoom() {
+    if (!sheetCard.classList.contains("room-mode")) return;
+    sheetCard.classList.remove("room-mode");
+    sheetCard.style.cssText = "";
+    if (figCv) { figCv.remove(); figCv = null; figCtx = null; }
+    const card = sheetCard.querySelector(".card");
+    if (card) card.style.height = "";
+    game.scene = sceneBeforeRoom;
+  }
+
   function openStand(s) {
     currentStand = s;
     $("card-no").textContent = "Стенд " + String(s.index + 1).padStart(2, "0") + " из " + String(stands.length).padStart(2, "0");
@@ -642,7 +678,9 @@
     $("card-next").textContent = next ? "К стенду «" + next.short + "» →" : "К выходу →";
     $("card-edit").hidden = !!GUEST;            // слушателю править нечего
     sheetCard.querySelector(".card").style.borderTopColor = s.accent;
+    enterRoom();
     openSheet(sheetCard);
+    placeRoomCard();
     markSeen(s.id);
     mark("stand:" + s.id, seen.size);
     syncChrome();
@@ -730,6 +768,7 @@
     $("card-edit").hidden = true;
     $("card-next").textContent = "Выйти в вестибюль";
     sheetCard.querySelector(".card").style.borderTopColor = C.teal;
+    leaveRoom();
     openSheet(sheetCard);
   }
 
@@ -1461,6 +1500,51 @@
     }
   }
 
+  /* ═══ комната стенда ══════════════════════════════════════════════════ */
+  const FIG_W = 64, FIG_H = 88;            // холст человечка в комнате, с запасом под тень
+  let figCv = null, figCtx = null;
+  function ensureFig() {
+    if (figCv) return;
+    figCv = document.createElement("canvas");
+    figCv.width = FIG_W; figCv.height = FIG_H;
+    figCv.className = "room-fig";
+    figCtx = figCv.getContext("2d");
+    sheetCard.appendChild(figCv);
+  }
+  function placeFig() {
+    if (!figCv) return;
+    figCv.style.width = Math.round(FIG_W * scale) + "px";
+    figCv.style.height = Math.round(FIG_H * scale) + "px";
+    figCv.style.bottom = Math.round((VH - roomFloorY() - Math.round(14 * U)) * scale) + "px";
+  }
+  // Рисуем в отдельный холст тем же кодом: подменяем ctx на время.
+  function drawRoomFigure(now) {
+    ensureFig(); placeFig();
+    figCtx.clearRect(0, 0, FIG_W, FIG_H);
+    const keepCtx = ctx, keepFloor = FLOOR_Y;
+    ctx = figCtx; FLOOR_Y = FIG_H - 7;
+    drawPlayer(FIG_W / 2, -1, 0, false, now);
+    ctx = keepCtx; FLOOR_Y = keepFloor;
+  }
+
+  function drawRoom() {
+    const R = G.R, fy = roomFloorY();
+    // стена за карточкой: её почти не видно, но по краям и внизу она держит кадр
+    px(0, 0, VW, fy, "#0e2231");
+    for (let x = 0; x < VW; x += R(56)) px(x, 0, 1, fy, "#0b1b27");
+    px(0, fy - R(10), VW, R(10), "#0b1c28");
+    px(0, fy - R(10), VW, 1, "#1e4458");
+    // пол
+    px(0, fy, VW, VH - fy, "#13232d");
+    px(0, fy, VW, 1, "#2a5569");
+    px(0, fy + R(10), VW, R(12), "#182e3a");
+    for (let x = -R(14); x < VW; x += R(44)) px(x, fy + 1, 1, VH - fy - 1, "#0e1d26");
+    // тёплое пятно на полу там, где он стоит
+    const px0 = VW - R(70);
+    ctx.fillStyle = "rgba(255,214,140,0.07)";
+    ctx.beginPath(); ctx.ellipse(px0, fy + R(16), R(58), R(14), 0, 0, Math.PI * 2); ctx.fill();
+  }
+
   /* ═══ человечек ═══════════════════════════════════════════════════════
      Два вида: капитан (чёрный китель, погоны, четыре нашивки) и слушатель
      (синий китель, одна нашивка, без погон). Кто именно — решает ссылка. */
@@ -1557,6 +1641,7 @@
   function frame(now) {
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now;
+    game.t = now;
     const locked = uiOpen() || titleShown || game.fadeDir === 1;
     let dir = 0;
     if (!locked) {
@@ -1590,10 +1675,15 @@
     } else if (game.fade > 0) game.fade = Math.max(0, game.fade - dt * 2.6);
 
     ctx.imageSmoothingEnabled = false;
-    if (game.scene === "street") drawStreet();
+    if (game.scene === "room") drawRoom();
+    else if (game.scene === "street") drawStreet();
     else if (game.scene === "corridor") drawCorridor();
     else drawHub();
-    drawPlayer(game.x - game.cam, game.facing, Math.floor(game.walkPhase), game.moving, now);
+    if (game.scene !== "room") {
+      drawPlayer(game.x - game.cam, game.facing, Math.floor(game.walkPhase), game.moving, now);
+    } else {
+      drawRoomFigure(now);
+    }
 
     const vg = ctx.createRadialGradient(VW / 2, VH / 2, VH * 0.35, VW / 2, VH / 2, VH * 0.95);
     vg.addColorStop(0, "rgba(0,0,0,0)");
@@ -1631,6 +1721,7 @@
   }
 
   addEventListener("resize", () => {
+    placeRoomCard();
     const frac = game.x / Math.max(1, worldWidth());
     resize();
     relayout();
@@ -1638,6 +1729,7 @@
     game.x = clamp(frac * ww, 28, ww - 28);
     game.cam = clamp(game.x - VW / 2, 0, Math.max(0, ww - VW));
     placeRail();
+    placeRoomCard();
   });
 
   /* ═══ пуск ════════════════════════════════════════════════════════════ */

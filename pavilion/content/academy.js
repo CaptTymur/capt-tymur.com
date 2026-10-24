@@ -42,7 +42,15 @@ window.SKIPI_ACADEMY = {
           ]
         },
         { id: "chief",  label: "Старший помощник",  open: false },
-        { id: "cargo",  label: "Грузовой офицер",   open: false },
+        {
+          id: "cargo",
+          label: "Грузовой офицер: балкер / сухогруз",
+          sub: "Курс",
+          open: true,
+          doors: [
+            { label: "Раздел 1", open: true, pavilion: "cargo" }
+          ]
+        },
         { id: "lng",    label: "LNG",               open: false },
         { id: "sailor", label: "Моряк",             open: false }
       ]

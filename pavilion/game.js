@@ -948,8 +948,26 @@
     else toast("Подойдите к стенду или откройте «Править стенд»");
   });
 
-  /* ═══ создать стенд ═══════════════════════════════════════════════════ */
-  btnAdd.addEventListener("click", () => {
+  /* ═══ раздел курса из вестибюля ═══════════════════════════════════════
+     Преподаватель, зайдя на курс, открывает список стендов и добавляет
+     стенды, не спускаясь в коридор. Стенд всегда принадлежит разделу:
+     у курса с одним открытым разделом он берётся сам, у курса с несколькими
+     раздел выбирается в том же меню. */
+  const courseSections = () => DOORS.filter((d) => d.kind === "pavilion" && d.open && d.pavilion);
+
+  function ensureSection() {
+    if (game.scene === "corridor") return Promise.resolve(true);
+    if (game.scene !== "hub") return Promise.resolve(false);
+    const secs = courseSections();
+    if (!secs.length) { toast("В этом курсе нет открытых разделов"); return Promise.resolve(false); }
+    if (secs.length === 1) return enterPavilion(secs[0].pavilion).then(() => true);
+    return new Promise((res) => {
+      buildSectionPicker(secs, (d) => enterPavilion(d.pavilion).then(() => res(true)));
+      openSheet(sheetMenu);
+    });
+  }
+
+  function createStand() {
     const s = normalize({ short: "НОВЫЙ", title: "Новый стенд", icon: "book", custom: true }, stands.length);
     stands.push(s);
     save(); relayout();
@@ -957,6 +975,13 @@
     else { game.x = s.x; game.autoTarget = null; }
     openEditor(s);
     toast("Стенд создан");
+  }
+
+  /* ═══ создать стенд ═══════════════════════════════════════════════════ */
+  btnAdd.addEventListener("click", async () => {
+    if (!(await ensureSection())) return;
+    if (sheetMenu.classList.contains("on")) closeSheet(sheetMenu);
+    createStand();
   });
 
   /* ═══ меню модуля: порядок стендов ════════════════════════════════════
@@ -1024,7 +1049,7 @@
       li.addEventListener("click", () => {
         if (li.dataset.dragged === "1") { li.dataset.dragged = ""; return; }
         closeSheet(sheetMenu);
-        game.autoTarget = s.x; game.autoOpen = s.id;
+        goToStand(s);
       });
 
       if (!GUEST) {
@@ -1041,10 +1066,45 @@
     });
     $("mn-no").textContent = "Модуль";
     $("mn-title").textContent = SEED.title || "Стенды";
-    $("mn-lead").textContent = stands.length + " стендов, пройдено "
-      + stands.filter((s) => seen.has(s.id)).length + ".";
-    $("mn-hint").textContent = GUEST ? "нажмите на стенд, чтобы перейти к нему"
-      : "перетащите за ⠿, чтобы поменять порядок";
+    $("mn-lead").textContent = stands.length
+      ? stands.length + " стендов, пройдено " + stands.filter((s) => seen.has(s.id)).length + "."
+      : "Стендов пока нет.";
+    $("mn-hint").textContent = GUEST ? (stands.length ? "нажмите на стенд, чтобы перейти к нему" : "")
+      : (stands.length ? "перетащите за ⠿, чтобы поменять порядок" : "нажмите «+ стенд», чтобы создать первый");
+    $("mn-hint").hidden = !$("mn-hint").textContent;
+    $("mn-add").hidden = !!GUEST;
+  }
+
+  // Выбор раздела, когда у курса их несколько: те же строки, без ручки.
+  function buildSectionPicker(secs, onPick) {
+    elMenuList.innerHTML = "";
+    secs.forEach((d, i) => {
+      const li = document.createElement("li");
+      li.className = "mrow";
+      const num = document.createElement("span");
+      num.className = "num"; num.textContent = String(i + 1).padStart(2, "0");
+      const ttl = document.createElement("span");
+      ttl.className = "ttl"; ttl.textContent = d.ref.label || d.label;
+      const pav = PAVS[d.pavilion];
+      const marks = document.createElement("span");
+      marks.className = "marks";
+      marks.textContent = pav && pav.stands ? "стендов " + pav.stands.length : "";
+      li.appendChild(num); li.appendChild(ttl); li.appendChild(marks);
+      li.addEventListener("click", () => onPick(d));
+      elMenuList.appendChild(li);
+    });
+    $("mn-no").textContent = "Курс";
+    $("mn-title").textContent = (course && course.label) || "Разделы";
+    $("mn-lead").textContent = "Выберите раздел: стенды лежат внутри раздела.";
+    $("mn-hint").textContent = ""; $("mn-hint").hidden = true;
+    $("mn-add").hidden = true;
+  }
+
+  function goToStand(s) {
+    if (game.scene === "corridor") { game.autoTarget = s.x; game.autoOpen = s.id; return; }
+    go("corridor", s.x);
+    const then = game.fadeThen;
+    game.fadeThen = () => { then(); game.autoTarget = s.x; game.autoOpen = s.id; };
   }
 
   elMenuList.addEventListener("pointermove", (e) => {
@@ -1055,18 +1115,30 @@
     else if (elMenuList.lastChild !== dragRow) elMenuList.appendChild(dragRow);
     renumber();
   });
-  const endDrag = () => {
+  const endDrag = (e) => {
     if (!dragRow) return;
-    dragRow.classList.remove("drag");
+    const row = dragRow;
+    row.classList.remove("drag");
     dragRow = null;
     commitOrder();
     renumber();
+    // Захват на списке уводит click со строки на сам список, поэтому
+    // «нажал, не тащил» распознаём здесь: это переход к стенду.
+    if (e && e.type === "pointerup" && row.dataset.dragged !== "1") {
+      row.dataset.dragged = "1";                   // чтобы возможный click не сработал второй раз
+      const s = stands.find((n) => n.id === row.dataset.id);
+      if (s) { closeSheet(sheetMenu); goToStand(s); }
+    }
   };
   elMenuList.addEventListener("pointerup", endDrag);
   elMenuList.addEventListener("pointercancel", endDrag);
   elMenuList.addEventListener("lostpointercapture", endDrag);
 
-  btnMenu.addEventListener("click", () => { buildMenu(); openSheet(sheetMenu); });
+  btnMenu.addEventListener("click", async () => {
+    if (!(await ensureSection())) return;
+    buildMenu(); openSheet(sheetMenu);
+  });
+  $("mn-add").addEventListener("click", () => { closeSheet(sheetMenu); createStand(); });
   $("mn-x").addEventListener("click", () => closeSheet(sheetMenu));
   $("mn-done").addEventListener("click", () => closeSheet(sheetMenu));
   sheetMenu.addEventListener("pointerdown", (e) => { if (e.target === sheetMenu) closeSheet(sheetMenu); });
@@ -1161,8 +1233,9 @@
     const corridor = game.scene === "corridor";
     elCount.hidden = !corridor;
     elRail.hidden = !corridor;
-    btnMenu.hidden = !corridor;
-    btnAdd.hidden = !corridor || !!GUEST;
+    const hubTeach = game.scene === "hub" && !GUEST && courseSections().length > 0;
+    btnMenu.hidden = !(corridor || hubTeach);
+    btnAdd.hidden = !(corridor || hubTeach) || !!GUEST;
     btnData.hidden = !corridor || !!GUEST;
     elWhere.innerHTML =
       corridor ? esc(SEED.title) + "<small>" + esc(SEED.subtitle || "") + "</small>"

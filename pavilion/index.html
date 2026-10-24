@@ -103,6 +103,7 @@
   .btn:hover{background:#ffc357; border-color:#ffc357}
   .btn.ghost{background:transparent; color:var(--paper); border-color:var(--line)}
   .btn.ghost:hover{border-color:var(--teal); color:#9fe3e3}
+  .btn.small{font-size:10px; padding:7px 12px; margin-top:10px}
   .btn.danger{background:transparent; color:#e08a7a; border-color:#5a3029}
   .btn.danger:hover{border-color:#e0674a; color:#ffb3a1}
   .btn.sm{padding:8px 13px; font-size:10px; letter-spacing:.12em}
@@ -391,6 +392,16 @@
       <div class="card-no" id="mn-no">Модуль</div>
       <h2 class="card-title" id="mn-title">Стенды</h2>
       <p class="card-lead" id="mn-lead"></p>
+      <button class="btn ghost small" id="mn-rename" hidden>✎ название раздела</button>
+    </div>
+    <div id="mn-form" hidden>
+      <div class="row">
+        <div class="field"><label>Название раздела</label><input type="text" id="mn-t"></div>
+        <div class="field"><label>Подзаголовок</label><input type="text" id="mn-s">
+          <div class="hint">Мелкая строка под названием на вывеске коридора.</div></div>
+      </div>
+      <div class="row"><button class="btn" id="mn-save">Сохранить</button>
+        <button class="btn ghost" id="mn-cancel">Отмена</button></div>
     </div>
     <ol class="mlist" id="menu-list"></ol>
     <div class="card-foot"><span class="draft" id="mn-hint"></span>

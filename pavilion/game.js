@@ -235,6 +235,11 @@
   const PAVS = {};
   let SEED = { id: "course", title: "Павильон", subtitle: "", stands: [] };
   let PID = SEED.id;
+  // Название раздела, данное преподавателем в этом браузере; пустое — из файла.
+  let TITLE = "", SUBTITLE = "";
+  const TITLES = {};                       // id раздела → {title, subtitle} для дверей вестибюля
+  const secTitle = () => TITLE || SEED.title || PID;
+  const secSub = () => (TITLE ? SUBTITLE : (SEED.subtitle || ""));
 
   function loadScript(src) {
     return new Promise((res) => {
@@ -369,7 +374,8 @@
     }));
     await storeSet(PID, {
       version: 2, savedAt: new Date().toISOString(),
-      seedFingerprint: SEED_FP, stands: plain
+      seedFingerprint: SEED_FP, stands: plain,
+      title: TITLE, subtitle: SUBTITLE
     });
   }
   function markSeen(id) {
@@ -446,7 +452,10 @@
         .map((c) => ({ kind: "course", ref: c, label: c.label, sub: c.sub || "", open: !!c.open }));
     }
     return ((course && course.doors) || [])
-      .map((d) => ({ kind: "pavilion", ref: d, label: d.label, sub: "", open: !!d.open, pavilion: d.pavilion || "" }));
+      .map((d) => ({
+        kind: "pavilion", ref: d, sub: "", open: !!d.open, pavilion: d.pavilion || "",
+        label: (d.pavilion && TITLES[d.pavilion] && TITLES[d.pavilion].title) || d.label
+      }));
   }
 
   function setLevel(level) {
@@ -814,7 +823,7 @@
     body.classList.remove("two-col");
     const p = document.createElement("p");
     p.textContent = all
-      ? "Павильон «" + SEED.title + "» пройден целиком. Отметки о стендах остаются в этом браузере."
+      ? "Павильон «" + secTitle() + "» пройден целиком. Отметки о стендах остаются в этом браузере."
       : "Можно вернуться и пройти оставшиеся стенды, а можно выйти в вестибюль.";
     body.appendChild(p);
     $("card-note").hidden = true;
@@ -1116,7 +1125,9 @@
       elMenuList.appendChild(li);
     });
     $("mn-no").textContent = "Модуль";
-    $("mn-title").textContent = SEED.title || "Стенды";
+    $("mn-title").textContent = secTitle();
+    $("mn-rename").hidden = !!GUEST;
+    $("mn-form").hidden = true;
     $("mn-lead").textContent = stands.length
       ? stands.length + " стендов, пройдено " + stands.filter((s) => seen.has(s.id)).length + "."
       : "Стендов пока нет.";
@@ -1149,6 +1160,7 @@
     $("mn-lead").textContent = "Выберите раздел: стенды лежат внутри раздела.";
     $("mn-hint").textContent = ""; $("mn-hint").hidden = true;
     $("mn-add").hidden = true;
+    $("mn-rename").hidden = true; $("mn-form").hidden = true;
   }
 
   function goToStand(s) {
@@ -1190,6 +1202,30 @@
     buildMenu(); openSheet(sheetMenu);
   });
   $("mn-add").addEventListener("click", () => { closeSheet(sheetMenu); createStand(); });
+
+  /* ═══ название раздела ════════════════════════════════════════════════
+     Преподаватель переименовывает раздел прямо в меню: вывеска коридора,
+     дверь вестибюля и выгрузка «ДАННЫЕ» берут новое имя. Хранится вместе
+     со стендами в этом браузере; в файл содержания попадает через выгрузку. */
+  $("mn-rename").addEventListener("click", () => {
+    $("mn-t").value = secTitle(); $("mn-s").value = secSub();
+    $("mn-form").hidden = false; $("mn-rename").hidden = true;
+    $("mn-t").focus();
+  });
+  $("mn-cancel").addEventListener("click", () => { $("mn-form").hidden = true; $("mn-rename").hidden = !!GUEST; });
+  function applyTitle() {
+    const t = $("mn-t").value.trim(), sub = $("mn-s").value.trim();
+    if (!t) { toast("Название не может быть пустым"); return; }
+    TITLE = t; SUBTITLE = sub;
+    TITLES[PID] = { title: t, subtitle: sub };
+    save();
+    if (game.scene === "hub") setLevel("hub");        // дверь получает новое имя
+    syncChrome(); buildMenu();
+    toast("Раздел переименован");
+  }
+  $("mn-save").addEventListener("click", applyTitle);
+  $("mn-t").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); applyTitle(); } });
+  $("mn-s").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); applyTitle(); } });
   $("mn-x").addEventListener("click", () => closeSheet(sheetMenu));
   $("mn-done").addEventListener("click", () => closeSheet(sheetMenu));
   sheetMenu.addEventListener("pointerdown", (e) => { if (e.target === sheetMenu) closeSheet(sheetMenu); });
@@ -1223,7 +1259,7 @@
   sheetData.addEventListener("pointerdown", (e) => { if (e.target === sheetData) closeSheet(sheetData); });
 
   $("dt-export").addEventListener("click", () => {
-    const out = { pavilion: PID, title: SEED.title, subtitle: SEED.subtitle, exportedAt: new Date().toISOString(), stands };
+    const out = { pavilion: PID, title: secTitle(), subtitle: secSub(), exportedAt: new Date().toISOString(), stands };
     const blob = new Blob([JSON.stringify(out, null, 2)], { type: "application/json" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
@@ -1244,6 +1280,10 @@
       if (!Array.isArray(list) || !list.length) throw new Error("пусто");
       if (!confirm("Заменить текущие " + stands.length + " стендов на " + list.length + " из файла?")) return;
       stands = list.map(normalize);
+      if (!Array.isArray(parsed) && parsed.title) {
+        TITLE = String(parsed.title); SUBTITLE = String(parsed.subtitle || "");
+        TITLES[PID] = { title: TITLE, subtitle: SUBTITLE };
+      }
       await save(); relayout();
       closeSheet(sheetData);
       toast("Загружено стендов: " + stands.length);
@@ -1289,7 +1329,7 @@
     btnAdd.hidden = !(corridor || hubTeach) || !!GUEST;
     btnData.hidden = !corridor || !!GUEST;
     elWhere.innerHTML =
-      corridor ? esc(SEED.title) + "<small>" + esc(SEED.subtitle || "") + "</small>"
+      corridor ? esc(secTitle()) + "<small>" + esc(secSub()) + "</small>"
       : game.scene === "street" ? esc(ACADEMY.title || "Академия") + "<small>" + esc(ACADEMY.place || "") + "</small>"
       : game.scene === "hall" ? esc(building ? building.label : "Корпус") + "<small>" + esc(ACADEMY.title || "") + "</small>"
       : "Вестибюль<small>" + esc(course ? course.label : "") + "</small>";
@@ -2031,9 +2071,13 @@
     const hasLocal = saved && Array.isArray(saved.stands) && saved.stands.length;
     let list = SEED.stands || [];
     let replaced = false;
+    // Название читается независимо от стендов: в новом разделе их может не быть вовсе.
+    const sameSeed = !!saved && saved.seedFingerprint === SEED_FP;
+    TITLE = sameSeed ? (saved.title || "") : "";
+    SUBTITLE = sameSeed ? (saved.subtitle || "") : "";
 
     if (hasLocal) {
-      if (saved.seedFingerprint === SEED_FP) {
+      if (sameSeed) {
         list = saved.stands;                       // файл не менялся — работаем с местным набором
       } else {
         // Автор курса выложил другое содержание. Местный набор не теряем,
@@ -2042,8 +2086,9 @@
         await storeSet(lastBackupKey, {
           backedUpAt: new Date().toISOString(),
           seedFingerprint: saved.seedFingerprint || "",
-          stands: saved.stands
+          stands: saved.stands, title: saved.title || "", subtitle: saved.subtitle || ""
         });
+        delete TITLES[PID];
         replaced = true;
       }
     }
@@ -2062,6 +2107,14 @@
       if (d.pavilion && ids.indexOf(d.pavilion) < 0) ids.push(d.pavilion);
     })));
     await loadPavilions(ids);
+    // названия, данные преподавателем в этом браузере, — на двери вестибюля
+    for (const id of ids) {
+      const p = PAVS[id]; if (!p) continue;
+      const saved = await storeGet(id);
+      if (saved && saved.title && saved.seedFingerprint === fingerprint(p.stands)) {
+        TITLES[id] = { title: String(saved.title), subtitle: String(saved.subtitle || "") };
+      }
+    }
     // раздел без загруженного содержания закрываем: пустой коридор хуже честной двери
     BUILDINGS.forEach((b) => (b.courses || []).forEach((c) => (c.doors || []).forEach((d) => {
       if (d.pavilion && !PAVS[d.pavilion]) d.open = false;

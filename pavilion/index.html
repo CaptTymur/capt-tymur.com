@@ -187,6 +187,32 @@
   .mrow .ttl{font-size:14px; line-height:1.35; flex:1 1 auto; min-width:0;
     overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
   .mrow .marks{font-family:var(--mono); font-size:10px; color:#5f7b93; flex:0 0 auto; letter-spacing:.08em}
+  /* ── дерево: корпуса → курсы → разделы → стенды ────────────────────── */
+  #tree .card{width:min(760px,100%); border-top-color:var(--teal)}
+  .tree{list-style:none; margin:0; padding:6px 26px 10px}
+  .tree ul{list-style:none; margin:0; padding:0 0 0 18px; border-left:1px solid var(--line-2)}
+  .tree li{margin:0; padding:0}
+  .tree li::before{display:none}
+  .t-row{display:flex; align-items:center; gap:10px; padding:7px 10px; margin:3px 0; cursor:pointer;
+    border:1px solid transparent; color:var(--paper); user-select:none; min-width:0}
+  .t-row:hover{border-color:var(--teal); background:#0b1724}
+  .t-row.closed{color:#55738a; cursor:default}
+  .t-row.closed:hover{border-color:transparent; background:none}
+  .t-row.here{border-left:2px solid var(--amber); background:#0f1f2d}
+  .t-row .kind{font-family:var(--mono); font-size:9px; letter-spacing:.2em; text-transform:uppercase;
+    color:#5f7b93; flex:0 0 64px}
+  .t-row .name{flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .t-row.lvl-building .name{font-family:var(--mono); font-size:12px; letter-spacing:.14em; text-transform:uppercase; color:var(--teal)}
+  .t-row.lvl-course .name{font-size:15px; font-weight:600}
+  .t-row.lvl-pavilion .name{font-size:14px}
+  .t-row.lvl-stand{padding:4px 10px}
+  .t-row.lvl-stand .name{font-size:13px; color:#c9d6e0}
+  .t-row.lvl-stand.seen .num{color:var(--teal)}
+  .t-row .num{font-family:var(--mono); font-size:10px; color:#5f7b93; flex:0 0 24px}
+  .t-row .shrt{font-family:var(--mono); font-size:9px; letter-spacing:.1em; text-transform:uppercase;
+    color:#1a1205; padding:2px 6px; flex:0 1 auto; max-width:38%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .t-row .marks{font-family:var(--mono); font-size:10px; color:#5f7b93; flex:0 0 auto; letter-spacing:.08em; white-space:nowrap}
+  .t-row .local{color:var(--amber)}
   body.guest-mode .mrow .grip{display:none}
   body.guest-mode .mrow{touch-action:auto}
 
@@ -268,6 +294,7 @@
         <div class="plate guest" id="hud-guest" hidden>Слушатель<small id="hud-guest-name">—</small></div>
       </div>
       <div class="hud-right">
+        <button class="tool" id="btn-tree" hidden>дерево</button>
         <button class="tool" id="btn-menu" hidden>стенды</button>
         <button class="tool add" id="btn-add" hidden>+ стенд</button>
         <button class="tool" id="btn-data" hidden>данные</button>
@@ -385,6 +412,19 @@
 </div>
 
 <!-- меню модуля -->
+<div id="tree" class="sheet" role="dialog" aria-modal="true">
+  <div class="card">
+    <div class="card-head">
+      <button class="card-x" id="tr-x" aria-label="Закрыть">×</button>
+      <div class="card-no">Дерево</div>
+      <h2 class="card-title" id="tr-title">Академия</h2>
+      <p class="card-lead" id="tr-lead"></p>
+    </div>
+    <ul class="tree" id="tree-list"></ul>
+    <div class="card-foot"><span class="draft" id="tr-hint">нажмите на строку, чтобы перейти туда</span>
+      <button class="btn ghost" id="tr-done">Закрыть</button></div>
+  </div>
+</div>
 <div id="menu" class="sheet" role="dialog" aria-modal="true">
   <div class="card">
     <div class="card-head">

@@ -579,8 +579,8 @@
   const sheetCard = $("modal"), sheetEd = $("editor"), sheetData = $("data");
   const elPrompt = $("prompt"), elPromptCap = $("prompt-cap"), elPromptKey = $("prompt-key");
   const elWhere = $("hud-where"), elCount = $("hud-count"), elRail = $("rail"), elToast = $("toast");
-  const btnAdd = $("btn-add"), btnData = $("btn-data"), btnMenu = $("btn-menu");
-  const sheetMenu = $("menu");
+  const btnAdd = $("btn-add"), btnData = $("btn-data"), btnMenu = $("btn-menu"), btnTree = $("btn-tree");
+  const sheetMenu = $("menu"), sheetTree = $("tree");
 
   let toastTimer = 0;
   function toast(msg) {
@@ -598,6 +598,7 @@
   function closeTop() {
     if (sheetEd.classList.contains("on")) { commitEditor(); closeSheet(sheetEd); return; }
     if (sheetMenu.classList.contains("on")) { closeSheet(sheetMenu); return; }
+    if (sheetTree.classList.contains("on")) { closeSheet(sheetTree); return; }
     if (sheetData.classList.contains("on")) { closeSheet(sheetData); return; }
     if (sheetCard.classList.contains("on")) { closeSheet(sheetCard); return; }
   }
@@ -1230,6 +1231,125 @@
   $("mn-done").addEventListener("click", () => closeSheet(sheetMenu));
   sheetMenu.addEventListener("pointerdown", (e) => { if (e.target === sheetMenu) closeSheet(sheetMenu); });
 
+  /* ═══ дерево: корпуса → курсы → разделы → стенды ══════════════════════
+     Преподаватель видит всё содержание одним списком и переходит в любое
+     место нажатием. Стенды раздела берутся из его местного набора, если
+     он есть и файл с тех пор не менялся (та же логика, что при входе);
+     иначе — из файла. Пометка «в браузере» значит: набор отличается от файла. */
+  const elTree = $("tree-list");
+
+  async function standsOf(id) {
+    const p = PAVS[id];
+    if (!p) return { list: [], local: false };
+    if (id === PID) return { list: stands, local: fingerprint(stands) !== SEED_FP };
+    const saved = await storeGet(id);
+    const fp = fingerprint(p.stands);
+    if (saved && Array.isArray(saved.stands) && saved.stands.length && saved.seedFingerprint === fp) {
+      const list = saved.stands.map(normalize);
+      return { list, local: fingerprint(list) !== fp };
+    }
+    return { list: (p.stands || []).map(normalize), local: false };
+  }
+
+  function treeRow(lvl, kind, name, extra) {
+    const li = document.createElement("li");
+    const row = document.createElement("div");
+    row.className = "t-row lvl-" + lvl + (extra && extra.closed ? " closed" : "") + (extra && extra.here ? " here" : "");
+    const k = document.createElement("span"); k.className = "kind"; k.textContent = kind;
+    const n = document.createElement("span"); n.className = "name"; n.textContent = name;
+    const m = document.createElement("span"); m.className = "marks";
+    m.textContent = extra && extra.marks ? extra.marks : "";
+    if (extra && extra.local) { const l = document.createElement("span"); l.className = "marks local"; l.textContent = "в браузере"; m.appendChild(document.createTextNode(m.textContent ? " · " : "")); m.appendChild(l); }
+    row.appendChild(k); row.appendChild(n); row.appendChild(m);
+    li.appendChild(row);
+    return { li, row };
+  }
+
+  function jumpToHall(b) {
+    closeSheet(sheetTree);
+    building = b; course = null;
+    setLevel("hall"); go("hall", Math.round(240 * U));
+  }
+  function jumpToHub(b, c) {
+    closeSheet(sheetTree);
+    building = b; course = c;
+    setLevel("hub"); go("hub", Math.round(240 * U));
+  }
+  async function jumpToCorridor(b, c, d, standId) {
+    closeSheet(sheetTree);
+    building = b; course = c;
+    setLevel("hub");
+    const switching = d.pavilion !== PID || game.scene !== "corridor";
+    if (d.pavilion !== PID) await enterPavilion(d.pavilion);
+    const s = standId ? stands.find((n) => n.id === standId) : null;
+    if (!s) { go("corridor", ENTRY_X + Math.round(40 * U)); return; }
+    if (!switching) { game.autoTarget = s.x; game.autoOpen = s.id; return; }
+    go("corridor", s.x);
+    const then = game.fadeThen;
+    game.fadeThen = () => { then(); game.autoTarget = s.x; game.autoOpen = s.id; };
+  }
+
+  async function buildTree() {
+    elTree.innerHTML = "";
+    let nCourses = 0, nSections = 0, nStands = 0;
+    for (const b of BUILDINGS) {
+      const rb = treeRow("building", "корпус", b.label, { closed: !b.open, here: building === b && game.scene === "hall" });
+      if (b.open) rb.row.addEventListener("click", () => jumpToHall(b));
+      const ulC = document.createElement("ul");
+      for (const c of (b.courses || [])) {
+        const rc = treeRow("course", c.sub || "курс", c.label, { closed: !c.open, here: course === c && game.scene === "hub" });
+        if (c.open) { nCourses++; rc.row.addEventListener("click", () => jumpToHub(b, c)); }
+        const ulS = document.createElement("ul");
+        for (const d of (c.doors || [])) {
+          const id = d.pavilion || "";
+          const name = (id && TITLES[id] && TITLES[id].title) || d.label;
+          const open = !!d.open && !!id && !!PAVS[id];
+          const got = open ? await standsOf(id) : { list: [], local: false };
+          const seenSet = open ? (id === PID ? seen : seenSetFor(id)) : new Set();
+          const done = got.list.filter((s) => seenSet.has(s.id)).length;
+          const rs = treeRow("pavilion", "раздел", name, {
+            closed: !open, local: got.local,
+            here: id === PID && (game.scene === "corridor" || game.scene === "room"),
+            marks: open ? (got.list.length ? "стендов " + got.list.length + ", пройдено " + done : "пусто") : "закрыт"
+          });
+          if (open) { nSections++; nStands += got.list.length; rs.row.addEventListener("click", () => jumpToCorridor(b, c, d)); }
+          const ulSt = document.createElement("ul");
+          got.list.forEach((s, i) => {
+            const li = document.createElement("li");
+            const row = document.createElement("div");
+            row.className = "t-row lvl-stand" + (seenSet.has(s.id) ? " seen" : "");
+            const num = document.createElement("span"); num.className = "num"; num.textContent = String(i + 1).padStart(2, "0");
+            const shrt = document.createElement("span"); shrt.className = "shrt"; shrt.textContent = s.short; shrt.style.background = s.accent;
+            const ttl = document.createElement("span"); ttl.className = "name"; ttl.textContent = s.title || s.short;
+            const marks = document.createElement("span"); marks.className = "marks";
+            marks.textContent = [
+              (s.images && s.images.length > 1) ? "слайдов " + s.images.length : (s.image ? "слайд" : ""),
+              (s.videos && s.videos.length) ? "видео" : "",
+              (s.downloads && s.downloads.length) ? "файл" : "",
+              s.draft ? "черновик" : ""
+            ].filter(Boolean).join(" · ");
+            row.appendChild(num); row.appendChild(shrt); row.appendChild(ttl); row.appendChild(marks);
+            row.addEventListener("click", () => jumpToCorridor(b, c, d, s.id));
+            li.appendChild(row); ulSt.appendChild(li);
+          });
+          if (ulSt.children.length) rs.li.appendChild(ulSt);
+          ulS.appendChild(rs.li);
+        }
+        if (ulS.children.length) rc.li.appendChild(ulS);
+        ulC.appendChild(rc.li);
+      }
+      if (ulC.children.length) rb.li.appendChild(ulC);
+      elTree.appendChild(rb.li);
+    }
+    $("tr-title").textContent = ACADEMY.title || "Академия";
+    $("tr-lead").textContent = "Открыто курсов " + nCourses + ", разделов " + nSections + ", стендов " + nStands + ".";
+  }
+
+  btnTree.addEventListener("click", async () => { await buildTree(); openSheet(sheetTree); });
+  $("tr-x").addEventListener("click", () => closeSheet(sheetTree));
+  $("tr-done").addEventListener("click", () => closeSheet(sheetTree));
+  sheetTree.addEventListener("pointerdown", (e) => { if (e.target === sheetTree) closeSheet(sheetTree); });
+
   /* ═══ данные: выгрузка, загрузка, сброс ═══════════════════════════════ */
   btnData.addEventListener("click", async () => {
     const backup = await storeGet(PID + "/backup");
@@ -1328,6 +1448,7 @@
     btnMenu.hidden = !(corridor || hubTeach);
     btnAdd.hidden = !(corridor || hubTeach) || !!GUEST;
     btnData.hidden = !corridor || !!GUEST;
+    btnTree.hidden = !!GUEST || titleShown;
     elWhere.innerHTML =
       corridor ? esc(secTitle()) + "<small>" + esc(secSub()) + "</small>"
       : game.scene === "street" ? esc(ACADEMY.title || "Академия") + "<small>" + esc(ACADEMY.place || "") + "</small>"

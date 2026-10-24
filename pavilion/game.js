@@ -116,6 +116,55 @@
     ctx.textAlign = "left";
   }
 
+  // Надпись по словам в строки шириной maxW; строк не больше maxLines, остаток
+  // уходит в последнюю строку (её потом ужмёт textFit).
+  function wrapLabel(label, size, maxW) {
+    ctx.font = "700 " + size + "px " + MONO;
+    const fit = (t) => ctx.measureText(t).width <= maxW;
+    const words = [];
+    String(label).split(/\s+/).filter(Boolean).forEach((wd) => {
+      if (fit(wd)) { words.push(wd); return; }
+      let chunk = "";                                // слово шире щита — режем по буквам
+      for (const ch of wd) {
+        if (chunk && !fit(chunk + ch)) { words.push(chunk); chunk = ""; }
+        chunk += ch;
+      }
+      if (chunk) words.push(chunk);
+    });
+    const lines = [];
+    let cur = "";
+    words.forEach((wd) => {
+      const t = cur ? cur + " " + wd : wd;
+      if (!cur || ctx.measureText(t).width <= maxW) cur = t;
+      else { lines.push(cur); cur = wd; }
+    });
+    if (cur) lines.push(cur);
+    return lines.length ? lines : [""];
+  }
+  // Один кегль на все строки: уменьшается, пока строк не станет ≤ maxLines и
+  // каждая не влезет в maxW. Если и на минимуме не влезает — лишнее в многоточие.
+  function fitLabel(label, size, maxW, maxH) {
+    const minSz = Math.max(6, Math.round(size * 0.5));
+    const lh = (sz) => Math.round(sz * 1.2);
+    const fits = (lines, sz) => {
+      ctx.font = "700 " + sz + "px " + MONO;
+      return lines.length * lh(sz) <= maxH && lines.every((l) => ctx.measureText(l).width <= maxW);
+    };
+    for (let sz = size; sz >= minSz; sz--) {
+      const lines = wrapLabel(label, sz, maxW);
+      if (fits(lines, sz)) return { lines, size: sz, lh: lh(sz) };
+    }
+    // И на минимуме не влезло — хвост в многоточие.
+    const lines = wrapLabel(label, minSz, maxW);
+    const cap = Math.max(1, Math.floor(maxH / lh(minSz)));
+    if (lines.length > cap) {
+      lines.length = cap;
+      const last = lines[cap - 1];
+      lines[cap - 1] = (/\s/.test(last) ? last.replace(/\s*\S+$/, "") : last.slice(0, -2)) + "…";
+    }
+    return { lines, size: minSz, lh: lh(minSz) };
+  }
+
   // Длинное название двери режется на две строки по ближайшему к середине пробелу.
   function splitLabel(label, size, maxW) {
     ctx.font = "700 " + size + "px " + MONO;
@@ -267,7 +316,7 @@
   function normalize(raw, i) {
     return {
       id: raw.id || newId(),
-      short: (raw.short || "СТЕНД").slice(0, 10),
+      short: String(raw.short || "СТЕНД").trim() || "СТЕНД",
       icon: ICONS[raw.icon] ? raw.icon : "book",
       accent: raw.accent || ACCENTS[i % ACCENTS.length],
       title: raw.title || "",
@@ -415,7 +464,9 @@
     autoTarget: null, autoOpen: null, focus: null
   };
   const SPEED = 78;
-  const worldWidth = () => (game.scene === "corridor" ? CORRIDOR_W : HUB_W);
+  // «Комната» открывается только над стендом, поэтому мир в ней — коридор:
+  // иначе зажим координаты по ширине вестибюля сдвигал человечка влево от стенда.
+  const worldWidth = () => (game.scene === "corridor" || game.scene === "room" ? CORRIDOR_W : HUB_W);
   const uiOpen = () => !!document.querySelector(".sheet.on");
 
   function go(scene, atX) {
@@ -856,7 +907,7 @@
     if (!editing) return;
     const s = editing;
     const lines = (v) => v.split("\n").map((t) => t.trim()).filter(Boolean);
-    s.short = ($("ed-short").value.trim() || "СТЕНД").slice(0, 10);
+    s.short = $("ed-short").value.trim() || "СТЕНД";
     s.title = $("ed-title").value.trim();
     s.lead = $("ed-lead").value.trim();
     s.body = lines($("ed-body").value);
@@ -1623,9 +1674,12 @@
     px(sx - w / 2 + R(3), top + R(3), w, h, "rgba(0,0,0,0.30)");
     px(sx - w / 2 - 2, top - 2, w + 4, h + 4, C.standFrame);
     px(sx - w / 2, top, w, h, near ? "#eef3f7" : C.standBody);
-    const headH = R(15);
+    // Надпись любой длины: по словам в строки, шапка растёт под них (до трёх строк,
+    // дальше последняя строка ужимается шрифтом). Длинное слово ужимается само.
+    const lab = fitLabel(s.short, R(9), w - R(8), Math.round(h * 0.5) - R(6));
+    const headH = R(6) + lab.lines.length * lab.lh;
     px(sx - w / 2, top, w, headH, s.accent);
-    textFit(s.short, sx, top + R(3), R(9), "#1a1205", "center", w - R(8));
+    lab.lines.forEach((ln, i) => textFit(ln, sx, top + R(3) + i * lab.lh, lab.size, "#1a1205", "center", w - R(8)));
 
     const pad = R(5), ix = sx - w / 2 + pad, iw = w - pad * 2;
     const iy = top + headH + R(5), ih = h - headH - R(22);
@@ -1640,8 +1694,8 @@
       px(ix, iy, iw, ih, "#b9c6d1");
     } else {
       const lines = R(16);                                  // место под две строки внизу
-      const m = Math.max(2, Math.floor((ih - lines) / 8));   // пиктограмма влезает над ними
-      icon(s.icon, sx - m * 4, iy + Math.round((ih - lines - m * 8) / 2), m, C.standInk);
+      const m = Math.floor((ih - lines) / 8);               // пиктограмма влезает над ними
+      if (m >= 2) icon(s.icon, sx - m * 4, iy + Math.round((ih - lines - m * 8) / 2), m, C.standInk);
       for (let i = 0; i < 2; i++) {
         px(ix + R(3), iy + ih - lines + R(4) + i * R(6), [R(40), R(30)][i],
            Math.max(2, R(2)), i === 0 ? "#6d8296" : "#9fb0bf");

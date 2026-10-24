@@ -182,7 +182,7 @@
     letter-spacing:-1px}
   .mrow .num{font-family:var(--mono); font-size:11px; color:#5f7b93; flex:0 0 28px}
   .mrow .shrt{font-family:var(--mono); font-size:10px; letter-spacing:.1em; text-transform:uppercase;
-    color:#1a1205; padding:3px 7px; flex:0 0 auto}
+    color:#1a1205; padding:3px 7px; flex:0 1 auto; max-width:42%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
   .mrow .ttl{font-size:14px; line-height:1.35; flex:1 1 auto; min-width:0;
     overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
   .mrow .marks{font-family:var(--mono); font-size:10px; color:#5f7b93; flex:0 0 auto; letter-spacing:.08em}
@@ -348,7 +348,7 @@
 
     <div class="row">
       <div class="field"><label>Надпись на стенде</label>
-        <input type="text" id="ed-short" maxlength="10" placeholder="до 10 знаков">
+        <input type="text" id="ed-short" placeholder="коротко, но сколько нужно">
         <div class="hint">То, что видно издалека в коридоре.</div></div>
       <div class="field"><label>Заголовок карточки</label>
         <input type="text" id="ed-title" placeholder="Название стенда"></div>

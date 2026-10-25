@@ -147,7 +147,15 @@
     if (row) row.scrollIntoView({ block: "nearest" });
   }
   const isSel = (sel) => JSON.stringify(sel) === JSON.stringify(S.sel);
-  function renderAll() { renderTree(); renderInspector(); renderLinks(); }
+  function syncStatusSel() {
+    const st = $("status-sel"), sel = S.sel; if (!st) return;
+    const w = (sel.sec && findDoor(sel.sec)) || null;
+    st.textContent = sel.type === "academy" ? "Академия"
+      : sel.type === "building" ? (S.buildings.find((b) => b.id === sel.b) || {}).label || ""
+      : sel.type === "course" ? ((S.buildings.find((b) => b.id === sel.b) || { courses: [] }).courses.find((c) => c.id === sel.c) || {}).label || ""
+      : (w ? w.c.label + " \\ " : "") + secName(sel.sec) + (sel.type === "stand" ? " \\ " + standName(standOf(sel.sec, sel.stand)) : "");
+  }
+  function renderAll() { renderTree(); renderInspector(); renderLinks(); syncStatusSel(); }
 
   /* ═══ дерево ══════════════════════════════════════════════════════════ */
   const linkCount = (sec, stand) => S.links.filter((l) =>
@@ -220,8 +228,10 @@
     const row = el("div", "row lvl-" + o.lvl + (o.closed ? " closed" : "") + (o.sel && isSel(o.sel) ? " sel" : "") + (o.draft ? " draft" : "") + (o.hit ? " hit" : "") + (o.pickable ? " pickable" : ""));
     if (o.lvl !== "stand") {
       const tw = el("span", "tw", o.tw || "");
+      if (o.tw) tw.dataset.o = o.tw === "▾" ? "−" : "+";
       if (o.key && o.tw) tw.addEventListener("click", (e) => { e.stopPropagation(); if (S.expanded.has(o.key)) S.expanded.delete(o.key); else S.expanded.add(o.key); rememberExpanded(); renderTree(); });
       row.appendChild(tw);
+      row.appendChild(el("span", "ic"));
       row.appendChild(el("span", "kind", o.kind));
     } else {
       row.appendChild(el("span", "num", o.num));
@@ -373,7 +383,8 @@
     i.addEventListener("change", () => on(i.checked));
     l.appendChild(i); l.appendChild(document.createTextNode(label)); return l;
   }
-  function btn(txt, cls, on) { const b = el("button", "tool " + (cls || ""), txt); b.type = "button"; b.addEventListener("click", on); return b; }
+  const cap = (t) => t && /^[a-zа-яё]/.test(t) ? t[0].toUpperCase() + t.slice(1) : t;
+  function btn(txt, cls, on) { const b = el("button", "tool " + (cls || ""), cap(txt)); b.type = "button"; b.addEventListener("click", on); return b; }
   function crumbs(parts) {
     const c = el("div", "crumbs");
     parts.forEach((p, i) => { if (i) c.appendChild(document.createTextNode("  ›  ")); const b = el("b", null, p.label); if (p.sel) { b.style.cursor = "pointer"; b.addEventListener("click", () => select(p.sel)); } c.appendChild(b); });
@@ -548,7 +559,7 @@
   function inspStand(box, sec, s) {
     const w = findDoor(sec.id);
     const i = sec.stands.indexOf(s);
-    const save = () => later("sec:" + sec.id, () => { saveSection(sec.id); renderTree(); });
+    const save = () => later("sec:" + sec.id, () => { saveSection(sec.id); renderTree(); syncStatusSel(); });
     box.appendChild(crumbs([{ label: "академия", sel: { type: "academy" } }, w ? { label: w.c.label, sel: { type: "course", b: w.b.id, c: w.c.id } } : null, { label: sec.title, sel: { type: "section", sec: sec.id } }, { label: "стенд " + String(i + 1).padStart(2, "0") }].filter(Boolean)));
     const h = el("h1", null, s.title || s.short); box.appendChild(h);
     const shield = el("div", "shield"); shield.style.borderLeftColor = s.accent;
@@ -610,7 +621,7 @@
   function iconCanvas(name) {
     const g = M.ICONS[name] || M.ICONS.book;
     const c = document.createElement("canvas"); c.width = 24; c.height = 24;
-    const ctx = c.getContext("2d"); ctx.fillStyle = "#e6eef6";
+    const ctx = c.getContext("2d"); ctx.fillStyle = "#000";
     for (let r = 0; r < g.length; r++) for (let k = 0; k < g[r].length; k++) if (g[r][k] === "#") ctx.fillRect(k * 3, r * 3, 3, 3);
     return c;
   }
@@ -943,12 +954,15 @@
       if (!a || !b) {
         // другой конец вне этой карты (другой курс): короткий пунктир с подписью, куда ведёт
         const n = a || b, outgoing = !!a;
-        const sx = outgoing ? n.x + n.w : n.x, sy = n.y + n.h / 2 + (outgoing ? 10 : -10), ex = outgoing ? sx + 70 : sx - 70;
-        const p = mk("path", { d: "M" + sx + "," + sy + " L" + ex + "," + sy, class: "edge", stroke: M.LINK_KINDS[l.kind].color, "stroke-dasharray": "4 3", "marker-end": outgoing ? "url(#arr-" + l.kind + ")" : "", "marker-start": outgoing ? "" : "url(#arr-" + l.kind + ")" });
+        const cx = n.x + 24, by = n.y + n.h, ly = by + 16;
+        const d = outgoing
+          ? "M" + cx + "," + by + " L" + cx + "," + ly + " L" + (cx + 36) + "," + ly
+          : "M" + (cx + 36) + "," + ly + " L" + cx + "," + ly + " L" + cx + "," + by;
+        const p = mk("path", { d, class: "edge", stroke: M.LINK_KINDS[l.kind].color, "stroke-dasharray": "4 3", "marker-end": "url(#arr-" + l.kind + ")" });
         const tt = mk("title"); tt.textContent = M.LINK_KINDS[l.kind].label + ": " + nodeLabel(l.from) + " → " + nodeLabel(l.to) + (l.note ? " — " + l.note : ""); p.appendChild(tt);
         svg.appendChild(p);
-        const t = mk("text", { x: outgoing ? ex + 4 : ex - 4, y: sy + 4, class: "lane-l", "text-anchor": outgoing ? "start" : "end" });
-        t.textContent = (outgoing ? "→ " : "← ") + nodeLabel(outgoing ? l.to : l.from).slice(0, 34); svg.appendChild(t);
+        const t = mk("text", { x: cx + 42, y: ly + 4, class: "lane-l" });
+        t.textContent = (outgoing ? "→ " : "← ") + nodeLabel(outgoing ? l.to : l.from).slice(0, 40); svg.appendChild(t);
         drawn++; return;
       }
       const x1 = a.x + a.w, y1 = a.y + a.h / 2, x2 = b.x, y2 = b.y + b.h / 2;

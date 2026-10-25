@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Skipi Education — мастерская методиста</title>
+<meta name="robots" content="noindex, nofollow, noarchive">
+<meta name="referrer" content="no-referrer">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' fill='%230c1a26'/><rect x='3' y='3' width='10' height='2' fill='%232aa0a0'/><rect x='3' y='7' width='7' height='2' fill='%23e6eef6'/><rect x='3' y='11' width='10' height='2' fill='%23f0a830'/></svg>">
+<style>
+  :root{
+    --ink:#07101a; --panel:#0e1d2b; --panel-2:#13293c; --line:#20425c; --line-2:#1b3448;
+    --amber:#f0a830; --teal:#2aa0a0; --red:#e0674a; --paper:#e6eef6; --muted:#8aa4bb; --dim:#5f7890;
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  }
+  *{box-sizing:border-box}
+  [hidden]{display:none !important}
+  html,body{height:100%}
+  body{margin:0; background:var(--ink); color:var(--paper); font-family:var(--sans); font-size:14px; line-height:1.45;
+    display:flex; flex-direction:column; overflow:hidden}
+  button,input,textarea,select{font:inherit; color:inherit}
+  button{cursor:pointer}
+  a{color:#9fe3e3}
+  ::selection{background:rgba(42,160,160,.4)}
+
+  /* ── шапка ─────────────────────────────────────────── */
+  .top{display:flex; align-items:center; gap:12px; padding:10px 16px; background:var(--panel);
+    border-bottom:1px solid var(--line); flex:0 0 auto}
+  .brand{font-family:var(--mono); font-size:12px; letter-spacing:.22em; text-transform:uppercase; white-space:nowrap}
+  .brand small{display:block; font-size:9px; letter-spacing:.18em; color:var(--muted); margin-top:2px}
+  .top .sp{flex:1}
+  .status{font-family:var(--mono); font-size:10px; letter-spacing:.12em; color:var(--muted); white-space:nowrap}
+  .status.busy{color:var(--amber)}
+  .tool{font-family:var(--mono); font-size:10px; letter-spacing:.14em; text-transform:uppercase; padding:8px 11px;
+    background:rgba(8,18,28,.86); color:var(--paper); border:1px solid var(--line); border-top:2px solid var(--teal);
+    text-decoration:none; display:inline-block; line-height:normal; white-space:nowrap}
+  .tool:hover{border-color:var(--teal); color:#9fe3e3}
+  .tool.add{border-top-color:var(--amber)}
+  .tool.add:hover{border-color:var(--amber); color:#ffd98a}
+  .tool.warn{border-top-color:var(--red)}
+  .tool.warn:hover{border-color:var(--red); color:#ffb3a0}
+  .tool.sm{padding:5px 8px; font-size:9px}
+  .tool:disabled{opacity:.45; cursor:default}
+  .mode{display:flex; border:1px solid var(--line); border-top:2px solid var(--amber); background:rgba(8,18,28,.86); margin-left:10px}
+  .mode .seg{cursor:pointer; font-family:var(--mono); font-size:10px; letter-spacing:.14em; text-transform:uppercase;
+    padding:8px 11px; background:transparent; color:var(--muted); border:none}
+  .mode .seg + .seg{border-left:1px solid var(--line)}
+  .mode .seg.on{background:var(--amber); color:#07101a; font-weight:700}
+  .mode .seg:not(.on):hover{color:#ffd98a}
+
+  /* ── три колонки ───────────────────────────────────── */
+  .cols{flex:1; display:grid; grid-template-columns:minmax(280px,340px) minmax(0,1fr) minmax(280px,360px); min-height:0}
+  .pane{min-height:0; overflow:auto; border-right:1px solid var(--line-2)}
+  .pane:last-child{border-right:none}
+  .pane-h{position:sticky; top:0; z-index:2; background:var(--ink); padding:12px 14px 8px; border-bottom:1px solid var(--line-2);
+    display:flex; align-items:center; gap:8px}
+  .pane-h .k{font-family:var(--mono); font-size:10px; letter-spacing:.26em; text-transform:uppercase; color:var(--teal)}
+  .pane-h .sp{flex:1}
+  #tree-pane{background:#091522}
+  #inspector{background:var(--ink)}
+  #links-pane{background:#091522}
+
+  /* ── дерево ────────────────────────────────────────── */
+  .search{width:100%; padding:7px 10px; background:#0b1724; border:1px solid var(--line-2); color:var(--paper);
+    font-size:13px; outline:none}
+  .search:focus{border-color:var(--teal)}
+  .search-wrap{padding:8px 14px 4px; position:sticky; top:49px; z-index:2; background:#091522}
+  .tree,.tree ul{list-style:none; margin:0; padding:0}
+  .tree{padding:6px 8px 60px}
+  .tree ul{padding-left:14px; border-left:1px solid var(--line-2); margin-left:11px}
+  .row{display:flex; align-items:center; gap:7px; padding:5px 6px; cursor:pointer; border:1px solid transparent;
+    user-select:none; min-height:30px; position:relative}
+  .row:hover{background:#0e1d2b}
+  .row.sel{background:#102a3a; border-color:var(--teal)}
+  .row.closed .name{color:var(--dim)}
+  .row .tw{width:14px; flex:0 0 14px; font-family:var(--mono); font-size:10px; color:var(--muted); text-align:center}
+  .row .kind{font-family:var(--mono); font-size:9px; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); flex:0 0 auto; width:50px}
+  .row.lvl-stand .kind{width:auto}
+  .row .name{flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .row.lvl-building .name{font-family:var(--mono); letter-spacing:.06em; text-transform:uppercase; font-size:12px}
+  .row.lvl-course .name{font-weight:600}
+  .row .marks{font-family:var(--mono); font-size:9px; letter-spacing:.08em; color:var(--muted); flex:0 0 auto; white-space:nowrap}
+  .row .marks .local{color:var(--amber)}
+  .row .marks .ln{color:#9fe3e3}
+  .row .num{font-family:var(--mono); font-size:10px; color:var(--dim); width:18px; flex:0 0 18px}
+  .row .shrt{font-family:var(--mono); font-size:9px; letter-spacing:.08em; color:#07101a; padding:2px 5px; max-width:84px;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:0 0 auto}
+  .row.draft .name::after{content:" · черновик"; color:var(--dim); font-size:11px}
+  .row .plus{opacity:0; position:absolute; right:4px; top:3px; font-family:var(--mono); font-size:9px; letter-spacing:.1em;
+    text-transform:uppercase; padding:3px 6px; background:#0b1724; border:1px solid var(--line); color:var(--amber)}
+  .row:hover .plus{opacity:1}
+  .row.drag{opacity:.4}
+  .row.over-top{box-shadow:inset 0 2px 0 var(--amber)}
+  .row.over-bot{box-shadow:inset 0 -2px 0 var(--amber)}
+  .row.over-in{background:#1a2f1a; border-color:#7fb069}
+  .tree.picking .row{cursor:crosshair}
+  .tree.picking .row.pickable:hover{background:#2b2410; border-color:var(--amber)}
+  .tree.picking .row:not(.pickable){opacity:.45}
+  .row.hit .name{color:#ffd98a}
+  .tree-empty{padding:30px 16px; color:var(--muted)}
+
+  /* ── инспектор ─────────────────────────────────────── */
+  .insp{padding:16px 22px 80px; max-width:860px}
+  .crumbs{font-family:var(--mono); font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); margin-bottom:6px}
+  .crumbs b{color:var(--teal); font-weight:normal}
+  .insp h1{font-size:22px; margin:0 0 4px; font-weight:600; line-height:1.25}
+  .insp .sub{color:var(--muted); margin:0 0 16px}
+  .bar{display:flex; flex-wrap:wrap; gap:8px; margin:10px 0 18px}
+  .bar .sp{flex:1}
+  .f{margin:0 0 14px}
+  .f label{display:block; font-family:var(--mono); font-size:10px; letter-spacing:.2em; text-transform:uppercase; color:var(--muted); margin-bottom:5px}
+  .f label i{font-style:normal; letter-spacing:0; text-transform:none; color:var(--dim); margin-left:8px}
+  .f input[type=text],.f input[type=url],.f textarea,.f select{width:100%; padding:8px 10px; background:#0b1724; border:1px solid var(--line-2);
+    color:var(--paper); font-size:14px; outline:none; border-radius:0}
+  .f input:focus,.f textarea:focus,.f select:focus{border-color:var(--teal)}
+  .f textarea{min-height:84px; resize:vertical; line-height:1.5}
+  .f textarea.tall{min-height:150px}
+  .f .hint{font-size:12px; color:var(--dim); margin-top:4px}
+  .f .mono{font-family:var(--mono); font-size:13px}
+  .grid2{display:grid; grid-template-columns:1fr 1fr; gap:0 16px}
+  .grid3{display:grid; grid-template-columns:2fr 1fr 1fr; gap:0 16px}
+  .chk{display:flex; align-items:center; gap:8px; font-size:13px; cursor:pointer; margin:0 0 14px}
+  .chk input{width:16px; height:16px; accent-color:var(--teal)}
+  .sw{display:flex; gap:6px; flex-wrap:wrap}
+  .sw button{width:26px; height:26px; border:2px solid transparent; padding:0}
+  .sw button.on{border-color:#fff; box-shadow:0 0 0 1px #000}
+  .icons{display:flex; gap:6px; flex-wrap:wrap}
+  .icons button{width:34px; height:34px; background:#0b1724; border:1px solid var(--line-2); padding:0; display:grid; place-items:center}
+  .icons button.on{border-color:var(--amber); background:#1a2a1a}
+  .icons canvas{image-rendering:pixelated}
+  .sec-h{font-family:var(--mono); font-size:10px; letter-spacing:.26em; text-transform:uppercase; color:var(--amber);
+    margin:26px 0 10px; padding-top:14px; border-top:1px solid var(--line-2)}
+  .sec-h:first-child{margin-top:0; padding-top:0; border-top:none}
+  .kv{display:grid; grid-template-columns:150px 1fr; gap:4px 14px; font-size:13px; margin-bottom:14px}
+  .kv dt{color:var(--muted); font-family:var(--mono); font-size:10px; letter-spacing:.14em; text-transform:uppercase; padding-top:3px}
+  .kv dd{margin:0}
+  .kv code{font-family:var(--mono); font-size:12px; background:#0b1724; padding:1px 5px}
+  .ok{color:#9fd4a8}.warn-t{color:var(--amber)}.bad{color:#ffb3a0}
+
+  .drop{border:1px dashed var(--line); padding:14px; text-align:center; color:var(--muted); font-size:13px; background:#0b1724}
+  .drop.over{border-color:var(--amber); color:var(--paper)}
+  .drop img{max-width:100%; max-height:260px; display:block; margin:0 auto 10px; background:#000}
+  .list{display:flex; flex-direction:column; gap:6px; margin-bottom:8px}
+  .item{display:flex; gap:8px; align-items:center; padding:7px 9px; background:#0b1724; border:1px solid var(--line-2)}
+  .item input[type=text],.item input[type=url]{flex:1; min-width:60px; padding:5px 8px; background:#07101a; border:1px solid var(--line-2); color:var(--paper); font-size:13px; outline:none}
+  .item input:focus{border-color:var(--teal)}
+  .item img{width:56px; height:40px; object-fit:cover; background:#000; flex:0 0 56px}
+  .item .x{font-family:var(--mono); color:var(--muted); background:none; border:1px solid transparent; padding:2px 7px}
+  .item .x:hover{color:#ffb3a0; border-color:var(--line)}
+  .item .mv{font-family:var(--mono); color:var(--muted); background:none; border:none; padding:0 4px}
+  .item .mv:hover{color:var(--paper)}
+  .item label.chk{margin:0; font-size:12px; white-space:nowrap}
+
+  .tbl{display:flex; flex-direction:column; gap:4px; margin-bottom:10px}
+  .trow{display:flex; align-items:center; gap:8px; padding:7px 9px; background:#0b1724; border:1px solid var(--line-2); cursor:pointer}
+  .trow:hover{border-color:var(--teal)}
+  .trow .n{font-family:var(--mono); font-size:10px; color:var(--dim); width:22px}
+  .trow .t{flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .trow .m{font-family:var(--mono); font-size:9px; letter-spacing:.08em; color:var(--muted); white-space:nowrap}
+  .trow .mv{font-family:var(--mono); color:var(--muted); background:none; border:1px solid transparent; padding:1px 6px}
+  .trow .mv:hover{color:var(--paper); border-color:var(--line)}
+  .empty{color:var(--dim); font-size:13px; padding:8px 0}
+  .shield{display:inline-flex; align-items:center; gap:10px; padding:10px 14px; background:#0b1724; border:1px solid var(--line-2); border-left:4px solid var(--amber); margin-bottom:14px}
+  .shield .sh{font-family:var(--mono); font-size:11px; letter-spacing:.14em; text-transform:uppercase; padding:4px 8px; color:#07101a}
+  .shield .st{color:var(--muted); font-size:13px}
+
+  /* ── связи ─────────────────────────────────────────── */
+  .lp{padding:12px 14px 80px}
+  .lp .who{font-size:15px; font-weight:600; margin:0 0 2px; line-height:1.3}
+  .lp .where{color:var(--muted); font-size:12px; margin:0 0 14px}
+  .lk{display:flex; align-items:flex-start; gap:8px; padding:8px 9px; margin-bottom:6px; background:#0b1724; border:1px solid var(--line-2); border-left:3px solid var(--teal)}
+  .lk .kind{font-family:var(--mono); font-size:9px; letter-spacing:.12em; text-transform:uppercase; color:#07101a; padding:3px 6px; flex:0 0 auto; margin-top:1px}
+  .lk .body{flex:1; min-width:0}
+  .lk .t{cursor:pointer}
+  .lk .t:hover{color:#9fe3e3}
+  .lk .s{color:var(--muted); font-size:12px}
+  .lk .note{font-size:12px; color:var(--paper); margin-top:3px; background:none; border:none; border-bottom:1px dashed var(--line); width:100%; padding:1px 0; outline:none}
+  .lk .note:focus{border-bottom-color:var(--teal)}
+  .lk .note::placeholder{color:var(--dim)}
+  .lk .x{font-family:var(--mono); color:var(--muted); background:none; border:1px solid transparent; padding:2px 6px; flex:0 0 auto}
+  .lk .x:hover{color:#ffb3a0; border-color:var(--line)}
+  .lk.bad{opacity:.6; border-left-style:dashed}
+  .kinds{display:flex; gap:6px; margin-bottom:10px; flex-wrap:wrap}
+  .kinds button{font-family:var(--mono); font-size:10px; letter-spacing:.12em; text-transform:uppercase; padding:6px 9px;
+    background:#0b1724; border:1px solid var(--line-2); color:var(--muted)}
+  .kinds button.on{color:#07101a; border-color:transparent}
+  .khint{font-size:12px; color:var(--dim); margin:-4px 0 10px}
+  .picker{position:relative}
+  .picker input{width:100%; padding:8px 10px; background:#0b1724; border:1px solid var(--line-2); color:var(--paper); font-size:13px; outline:none}
+  .picker input:focus{border-color:var(--teal)}
+  .picker .dd{position:absolute; left:0; right:0; top:100%; z-index:5; max-height:260px; overflow:auto; background:#0e1d2b; border:1px solid var(--line); display:none}
+  .picker .dd.on{display:block}
+  .picker .opt{padding:7px 10px; cursor:pointer; font-size:13px; border-bottom:1px solid var(--line-2)}
+  .picker .opt:hover,.picker .opt.cur{background:#102a3a}
+  .picker .opt .s{color:var(--muted); font-size:11px; font-family:var(--mono)}
+  .picker .opt.sec-opt{color:#ffd98a}
+  .target{padding:8px 10px; background:#0b1724; border:1px solid var(--amber); font-size:13px; margin-top:6px; display:flex; gap:8px; align-items:center}
+  .target .sp{flex:1}
+  .pick-on{background:#2b2410; border:1px solid var(--amber); color:#ffd98a; padding:8px 10px; font-size:12px; margin-top:6px}
+
+  /* ── листы (данные, карта) ─────────────────────────── */
+  .sheet{position:fixed; inset:0; z-index:40; display:none; align-items:center; justify-content:center; padding:24px;
+    background:rgba(3,8,14,.78)}
+  .sheet.on{display:flex}
+  .card{background:var(--panel); border:1px solid var(--line); border-top:3px solid var(--teal); width:min(760px,100%);
+    max-height:100%; overflow:auto; padding:22px 26px 24px; position:relative}
+  .card.wide{width:min(1500px,100%); height:min(900px,100%); display:flex; flex-direction:column; padding:0}
+  .card h2{margin:0 0 4px; font-size:20px}
+  .card .lead{color:var(--muted); margin:0 0 16px}
+  .card-x{position:absolute; right:10px; top:8px; background:none; border:none; color:var(--muted); font-size:22px; line-height:1; padding:4px 8px}
+  .card-x:hover{color:var(--paper)}
+  .map-h{display:flex; align-items:center; gap:12px; padding:14px 20px; border-bottom:1px solid var(--line-2); flex:0 0 auto}
+  .map-h h2{flex:1}
+  .legend{display:flex; gap:12px; font-family:var(--mono); font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:var(--muted)}
+  .legend i{display:inline-block; width:18px; height:3px; vertical-align:middle; margin-right:5px}
+  .map-body{flex:1; overflow:auto; background:#060d14; min-height:0}
+  .map-body svg{display:block}
+  .map-body .node{cursor:pointer}
+  .map-body .node rect{fill:#0e1d2b; stroke:#20425c}
+  .map-body .node:hover rect{stroke:#9fe3e3}
+  .map-body .node.sel rect{stroke:var(--amber); stroke-width:2}
+  .map-body .node text{fill:#e6eef6; font-family:var(--sans); font-size:12px; pointer-events:none}
+  .map-body .node .sh{font-family:var(--mono); font-size:9px; letter-spacing:.1em; fill:#07101a}
+  .map-body .lane-l{fill:#8aa4bb; font-family:var(--mono); font-size:10px; letter-spacing:.14em; text-transform:uppercase}
+  .map-body .lane-c{fill:#ffd98a; font-family:var(--mono); font-size:11px; letter-spacing:.2em; text-transform:uppercase}
+  .map-body .lane{stroke:#1b3448}
+  .map-body .main{stroke:#20425c; stroke-width:2}
+  .map-body .edge{fill:none; stroke-width:2; opacity:.85}
+  .map-body .edge:hover{stroke-width:3.5; opacity:1}
+
+  .trash .trow{cursor:default}
+  #toast{position:fixed; left:50%; bottom:22px; transform:translateX(-50%); z-index:70; opacity:0; pointer-events:none;
+    transition:opacity .18s; background:rgba(8,18,28,.96); border:1px solid var(--line); border-left:2px solid var(--teal);
+    padding:8px 14px; font-family:var(--mono); font-size:11px; letter-spacing:.08em; color:var(--paper)}
+  #toast.on{opacity:1}
+
+  @media (max-width: 980px){
+    .top{flex-wrap:wrap; gap:8px}
+    .top .sp{display:none}
+    .cols{grid-template-columns:1fr; grid-template-rows:auto; overflow:auto}
+    .pane{overflow:visible; border-right:none; border-bottom:1px solid var(--line-2)}
+    .pane-h,.search-wrap{position:static}
+    .grid2,.grid3{grid-template-columns:1fr}
+    .kv{grid-template-columns:1fr}
+    .insp{padding:14px 14px 60px}
+    .item{flex-wrap:wrap}
+    .card{padding:18px 14px}
+  }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="brand">Мастерская<small>Skipi Education · методист</small></div>
+  <div class="mode" id="mode">
+    <button class="seg on" id="mode-build" title="Мастерская: дерево, разделы, стенды, связи">наполнение</button>
+    <button class="seg" id="mode-play" title="Павильон как его видит слушатель">игра</button>
+  </div>
+  <div class="sp"></div>
+  <div class="status" id="status">загрузка…</div>
+  <button class="tool" id="btn-map">карта связей</button>
+  <button class="tool" id="btn-data">данные</button>
+  <a class="tool add" id="btn-pav" href="index.html" target="pavilion">павильон ↗</a>
+</header>
+
+<main class="cols">
+  <aside class="pane" id="tree-pane">
+    <div class="pane-h"><span class="k">Дерево</span><span class="sp"></span>
+      <button class="tool sm add" id="btn-add-building">+ корпус</button></div>
+    <div class="search-wrap"><input class="search" id="q" type="text" placeholder="поиск: стенд, раздел, курс…" autocomplete="off"></div>
+    <ul class="tree" id="tree"></ul>
+  </aside>
+
+  <section class="pane" id="inspector">
+    <div class="insp" id="insp"><div class="empty">Загрузка…</div></div>
+  </section>
+
+  <aside class="pane" id="links-pane">
+    <div class="pane-h"><span class="k">Связи</span><span class="sp"></span><span class="status" id="lk-count"></span></div>
+    <div class="lp" id="lp"><div class="empty">Выберите стенд или раздел — здесь будут его связи.</div></div>
+  </aside>
+</main>
+
+<!-- данные -->
+<div class="sheet" id="sh-data">
+  <div class="card">
+    <button class="card-x" id="dt-x" aria-label="Закрыть">×</button>
+    <h2>Данные мастерской</h2>
+    <p class="lead" id="dt-lead">—</p>
+    <div class="sec-h">Вся академия одним файлом</div>
+    <p style="margin:0 0 10px; color:var(--muted); font-size:13px">Структура, все разделы со стендами и связи. Это и резервная копия, и то,
+      что нужно прислать разработчику, чтобы сделанное увидели слушатели.</p>
+    <div class="bar">
+      <button class="tool add" id="dt-export">выгрузить всё</button>
+      <button class="tool" id="dt-import">загрузить всё…</button>
+    </div>
+    <div class="sec-h">Файлы в репозитории</div>
+    <p style="margin:0 0 10px; color:var(--muted); font-size:13px">Если разработчик обновил структуру или содержание в файлах, здесь это видно.
+      Возврат к файлам стирает сделанное в этом браузере — перед этим выгрузите всё.</p>
+    <div class="bar">
+      <button class="tool" id="dt-reset-structure">вернуть структуру из файла</button>
+      <button class="tool warn" id="dt-wipe">стереть всё из этого браузера</button>
+    </div>
+    <div class="sec-h">Корзина</div>
+    <div class="trash tbl" id="dt-trash"><div class="empty">Пусто.</div></div>
+    <div class="bar" style="margin-top:14px"><span class="sp"></span><button class="tool" id="dt-done">закрыть</button></div>
+  </div>
+</div>
+
+<!-- карта связей -->
+<div class="sheet" id="sh-map">
+  <div class="card wide">
+    <div class="map-h">
+      <h2 id="map-title">Карта связей</h2>
+      <div class="legend" id="map-legend"></div>
+      <button class="tool" id="map-x">закрыть</button>
+    </div>
+    <div class="map-body" id="map-body"></div>
+  </div>
+</div>
+
+<input type="file" id="file-img" accept="image/*" hidden>
+<input type="file" id="file-json" accept="application/json,.json" hidden>
+<div id="toast"></div>
+
+<script src="content/academy.js"></script>
+<script src="content/links.js"></script>
+<script src="model.js"></script>
+<script src="studio.js"></script>
+</body>
+</html>

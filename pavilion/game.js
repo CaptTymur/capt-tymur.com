@@ -78,18 +78,8 @@
     teal: "#2aa0a0", amber: "#f0a830", paper: "#e6eef6"
   };
   const ACCENTS = ["#f0a830", "#2aa0a0", "#e0674a", "#7fb069", "#8e86d8", "#4a9fd8", "#d8894a"];
-  const ICONS = {
-    radio:   ["..#....#", "...#..#.", "....##..", ".######.", ".#....#.", ".#.##.#.", ".#....#.", ".######."],
-    antenna: ["#..#..#.", ".#.#.#..", "..###...", "...#....", "...#....", "..###...", ".#####..", "#######."],
-    speech:  [".#####..", "#.....#.", "#.##..#.", "#.....#.", "#..##.#.", "#.....#.", ".###.#..", "...#...."],
-    alarm:   ["...#....", "..###...", ".#####..", ".#####..", "#######.", "#######.", "........", "...#...."],
-    bridge:  ["..####..", ".#....#.", "#..##..#", "#.####.#", "#..##..#", ".#....#.", "..####..", "...##..."],
-    pilot:   ["..####..", ".######.", "..####..", "...##...", ".######.", "#..##..#", "#..##..#", "...##..."],
-    office:  ["#######.", "#.#.#.#.", "#######.", "#.#.#.#.", "#######.", "#.###.#.", "#.###.#.", "#######."],
-    log:     [".#####..", ".#...#..", ".#.###..", ".#...#..", ".#.###..", ".#...#..", ".#####..", "..###..."],
-    book:    ["..####..", ".#....#.", "#.####.#", "#.#..#.#", "#.####.#", "#.#..#.#", "#.####.#", ".######."],
-    anchor:  ["...##...", "...##...", ".######.", "...##...", "#..##..#", "#..##..#", ".######.", "..####.."]
-  };
+  const MODEL = window.SKIPI_MODEL;
+  const ICONS = MODEL.ICONS;
   const ICON_NAMES = Object.keys(ICONS);
 
   const px = (x, y, w, h, c) => { ctx.fillStyle = c; ctx.fillRect(x | 0, y | 0, w | 0, h | 0); };
@@ -238,6 +228,8 @@
   // Название раздела, данное преподавателем в этом браузере; пустое — из файла.
   let TITLE = "", SUBTITLE = "";
   const TITLES = {};                       // id раздела → {title, subtitle} для дверей вестибюля
+  const LOCAL_ONLY = {};                   // разделы, созданные в мастерской: файла нет, набор в браузере
+  let LINKS = [];                          // связи между стендами и разделами
   const secTitle = () => TITLE || SEED.title || PID;
   const secSub = () => (TITLE ? SUBTITLE : (SEED.subtitle || ""));
 
@@ -271,6 +263,11 @@
     return { id: key, name: g.name || key, role: g.role === "captain" ? "captain" : "cadet", note: g.note || "" };
   })();
   const SUIT = GUEST ? GUEST.role : "captain";
+  // Переключатель «наполнение / игра». В игре павильон чист, как у слушателя:
+  // без «+ стенд», «данные», правки, перестановки и дерева. Запоминается в браузере.
+  const MODE_KEY = "skipi-edu/mode";
+  let PLAY = (() => { try { return localStorage.getItem(MODE_KEY) === "play"; } catch (e) { return false; } })();
+  const AUTHOR = () => !GUEST && !PLAY;
   let SEEN_KEY = "", SEED_FP = "";
 
   /* Отметка о входе слушателя. Сервера у павильона нет, поэтому страница просто
@@ -300,17 +297,8 @@
   /* Отпечаток содержания из файла. Нужен, чтобы отличить «человек правил стенды
      у себя» от «автор курса выложил новое содержание». Берём то, что меняется
      при смысловой правке: состав и порядок стендов, надписи, слайды, объём текста. */
-  function fingerprint(list) {
-    const s = JSON.stringify((list || []).map((x) => [
-      x.id, x.short, x.title, x.image,
-      (x.images || []).map((i) => i.src),
-      (x.body || []).length, (x.points || []).length,
-      (x.downloads || []).map((d) => d.file)
-    ]));
-    let h = 5381;
-    for (let i = 0; i < s.length; i++) h = (((h * 33) ^ s.charCodeAt(i)) >>> 0);
-    return h.toString(36) + "." + s.length.toString(36);
-  }
+  // Считается в model.js: мастерская методиста обязана считать его так же.
+  const fingerprint = MODEL.fingerprint;
   let lastBackupKey = null;
   const seenKeyFor = (id) => "skipi-edu/" + id + "/seen" + (GUEST ? "/" + GUEST.id : "");
   function seenSetFor(id) {
@@ -439,7 +427,7 @@
       courses: [Object.assign({ id: "c1", label: (window.SKIPI_COURSE || {}).title || "Курс", open: true },
         { doors: ((window.SKIPI_COURSE || {}).doors) || [] })] }]
   };
-  const BUILDINGS = ACADEMY.buildings || [];
+  let BUILDINGS = ACADEMY.buildings || [];
   let building = null, course = null;      // где мы сейчас
 
   // Список дверей текущего уровня. Дверь знает, что за ней.
@@ -518,7 +506,8 @@
   addEventListener("blur", () => { held.left = held.right = false; });
 
   if ("ontouchstart" in window || navigator.maxTouchPoints > 0) document.body.classList.add("is-touch");
-  if (GUEST) document.body.classList.add("guest-mode");
+  const syncMode = () => document.body.classList.toggle("guest-mode", !AUTHOR());
+  syncMode();
   document.querySelectorAll("[data-hold]").forEach((btn) => {
     const key = btn.dataset.hold;
     const down = (e) => { e.preventDefault(); if (key === "act") interact(); else { held[key] = true; game.autoTarget = null; } };
@@ -579,7 +568,20 @@
   const sheetCard = $("modal"), sheetEd = $("editor"), sheetData = $("data");
   const elPrompt = $("prompt"), elPromptCap = $("prompt-cap"), elPromptKey = $("prompt-key");
   const elWhere = $("hud-where"), elCount = $("hud-count"), elRail = $("rail"), elToast = $("toast");
-  const btnAdd = $("btn-add"), btnData = $("btn-data"), btnMenu = $("btn-menu"), btnTree = $("btn-tree");
+  const btnAdd = $("btn-add"), btnData = $("btn-data"), btnMenu = $("btn-menu"), btnTree = $("btn-tree"), elMode = $("mode");
+  // «игра»: прячем инструменты на месте; «наполнение»: в мастерскую.
+  $("mode-play").addEventListener("click", () => {
+    if (PLAY) return;
+    PLAY = true;
+    try { localStorage.setItem(MODE_KEY, "play"); } catch (e) { /* не страшно */ }
+    syncMode(); syncChrome();
+    [sheetEd, sheetData, sheetTree, sheetMenu].forEach((el) => { if (el.classList.contains("on")) closeSheet(el); });
+    toast("Режим игры: павильон как у слушателя");
+  });
+  $("mode-build").addEventListener("click", () => {
+    try { localStorage.setItem(MODE_KEY, "build"); } catch (e) { /* не страшно */ }
+    location.href = "studio.html";
+  });
   const sheetMenu = $("menu"), sheetTree = $("tree");
 
   let toastTimer = 0;
@@ -735,12 +737,13 @@
     }
     renderVideos(col, s);
     renderDownloads(col, s);
+    renderLinks(col, s);
     $("card-note").textContent = s.note || "";
     $("card-note").hidden = !s.note;
     $("card-draft").hidden = !s.draft;
     const next = stands[s.index + 1];
     $("card-next").textContent = next ? "К стенду «" + next.short + "» →" : "К выходу →";
-    $("card-edit").hidden = !!GUEST;            // слушателю править нечего
+    $("card-edit").hidden = !AUTHOR();          // слушателю и в игре править нечего
     sheetCard.querySelector(".card").style.borderTopColor = s.accent;
     enterRoom();
     openSheet(sheetCard);
@@ -773,6 +776,53 @@
       row.appendChild(k); row.appendChild(txt); row.appendChild(a);
       body.appendChild(row);
     });
+  }
+
+  // Связи, заданные методистом: ответвления, отсылки, «сначала». Нажатие ведёт
+  // к стенду или разделу, в том числе в другом разделе и другом курсе.
+  function findDoor(sec) {
+    for (const b of BUILDINGS) for (const c of (b.courses || [])) for (const d of (c.doors || []))
+      if (d.pavilion === sec) return { b, c, d };
+    return null;
+  }
+  async function linkTargetName(l) {
+    const where = findDoor(l.to.sec);
+    const secName = (TITLES[l.to.sec] && TITLES[l.to.sec].title) || (where && where.d.label) || l.to.sec;
+    if (!l.to.stand) return { stand: "", sec: secName, ok: !!where };
+    const got = await standsOf(l.to.sec);
+    const t = got.list.find((x) => x.id === l.to.stand);
+    return { stand: t ? (t.title || t.short) : "стенд не найден", sec: secName, ok: !!where && !!t };
+  }
+  function renderLinks(body, s) {
+    const mine = LINKS.filter((l) => l.from.sec === PID && l.from.stand === s.id);
+    const back = LINKS.filter((l) => l.kind === "before" && l.to.sec === PID && l.to.stand === s.id);
+    if (!mine.length && !back.length) return;
+    const h = document.createElement("div");
+    h.className = "dl-h"; h.style.color = s.accent; h.textContent = "Связи";
+    body.appendChild(h);
+    const row = (l, kindLabel, color, target) => {
+      const a = document.createElement("a");
+      a.className = "dl link"; a.href = "#"; a.style.borderLeftColor = color;
+      const k = document.createElement("span"); k.className = "kind"; k.style.background = color; k.textContent = kindLabel;
+      const txt = document.createElement("span"); txt.textContent = "…";
+      const arrow = document.createElement("span"); arrow.className = "arrow"; arrow.textContent = "→";
+      a.appendChild(k); a.appendChild(txt); a.appendChild(arrow);
+      linkTargetName(target).then((t) => {
+        txt.textContent = (t.stand ? t.stand + " · " : "") + t.sec + (l.note ? " — " + l.note : "");
+        if (!t.ok) { a.classList.add("held"); arrow.textContent = "нет"; }
+      });
+      a.addEventListener("click", async (e) => {
+        e.preventDefault();
+        const where = findDoor(target.to.sec);
+        if (!where || !where.d.open) { toast("Этот раздел сейчас закрыт"); return; }
+        closeSheet(sheetCard);
+        await jumpToCorridor(where.b, where.c, where.d, target.to.stand || "");
+      });
+      body.appendChild(a);
+    };
+    mine.forEach((l) => row(l, MODEL.LINK_KINDS[l.kind].label, MODEL.LINK_KINDS[l.kind].color, l));
+    // «сначала» показываем и с другой стороны: этот стенд нужен прежде того
+    back.forEach((l) => row(l, "нужен для", MODEL.LINK_KINDS.before.color, { to: l.from, note: l.note }));
   }
 
   // Файлы на стенде. Запись с hold:true не отдаётся: файл не выложен наружу,
@@ -990,6 +1040,7 @@
     if (src) { setEdImage(src); toast("Изображение добавлено"); }
   });
   addEventListener("paste", async (e) => {
+    if (!AUTHOR()) return;                      // в игре и у слушателя вставка не правит стенды
     const items = (e.clipboardData && e.clipboardData.items) || [];
     let file = null;
     for (const it of items) if (it.kind === "file" && /^image\//.test(it.type)) { file = it.getAsFile(); break; }
@@ -1113,7 +1164,7 @@
         goToStand(s);
       });
 
-      if (!GUEST) {
+      if (AUTHOR()) {
         li.addEventListener("pointerdown", (e) => {
           if (e.button !== undefined && e.button !== 0) return;
           dragRow = li; li.dataset.dragged = "";
@@ -1127,15 +1178,15 @@
     });
     $("mn-no").textContent = "Модуль";
     $("mn-title").textContent = secTitle();
-    $("mn-rename").hidden = !!GUEST;
+    $("mn-rename").hidden = !AUTHOR();
     $("mn-form").hidden = true;
     $("mn-lead").textContent = stands.length
       ? stands.length + " стендов, пройдено " + stands.filter((s) => seen.has(s.id)).length + "."
       : "Стендов пока нет.";
-    $("mn-hint").textContent = GUEST ? (stands.length ? "нажмите на стенд, чтобы перейти к нему" : "")
+    $("mn-hint").textContent = !AUTHOR() ? (stands.length ? "нажмите на стенд, чтобы перейти к нему" : "")
       : (stands.length ? "перетащите за ⠿, чтобы поменять порядок" : "нажмите «+ стенд», чтобы создать первый");
     $("mn-hint").hidden = !$("mn-hint").textContent;
-    $("mn-add").hidden = !!GUEST;
+    $("mn-add").hidden = !AUTHOR();
   }
 
   // Выбор раздела, когда у курса их несколько: те же строки, без ручки.
@@ -1151,7 +1202,7 @@
       const pav = PAVS[d.pavilion];
       const marks = document.createElement("span");
       marks.className = "marks";
-      marks.textContent = pav && pav.stands ? "стендов " + pav.stands.length : "";
+      marks.textContent = pav && pav.stands ? "стендов " + pav.stands.length : (LOCAL_ONLY[d.pavilion] ? "в браузере" : "");
       li.appendChild(num); li.appendChild(ttl); li.appendChild(marks);
       li.addEventListener("click", () => onPick(d));
       elMenuList.appendChild(li);
@@ -1213,7 +1264,7 @@
     $("mn-form").hidden = false; $("mn-rename").hidden = true;
     $("mn-t").focus();
   });
-  $("mn-cancel").addEventListener("click", () => { $("mn-form").hidden = true; $("mn-rename").hidden = !!GUEST; });
+  $("mn-cancel").addEventListener("click", () => { $("mn-form").hidden = true; $("mn-rename").hidden = !AUTHOR(); });
   function applyTitle() {
     const t = $("mn-t").value.trim(), sub = $("mn-s").value.trim();
     if (!t) { toast("Название не может быть пустым"); return; }
@@ -1239,7 +1290,7 @@
   const elTree = $("tree-list");
 
   async function standsOf(id) {
-    const p = PAVS[id];
+    const p = PAVS[id] || (LOCAL_ONLY[id] ? { stands: [] } : null);
     if (!p) return { list: [], local: false };
     if (id === PID) return { list: stands, local: fingerprint(stands) !== SEED_FP };
     const saved = await storeGet(id);
@@ -1303,7 +1354,7 @@
         for (const d of (c.doors || [])) {
           const id = d.pavilion || "";
           const name = (id && TITLES[id] && TITLES[id].title) || d.label;
-          const open = !!d.open && !!id && !!PAVS[id];
+          const open = !!d.open && !!id && (!!PAVS[id] || !!LOCAL_ONLY[id]);
           const got = open ? await standsOf(id) : { list: [], local: false };
           const seenSet = open ? (id === PID ? seen : seenSetFor(id)) : new Set();
           const done = got.list.filter((s) => seenSet.has(s.id)).length;
@@ -1444,11 +1495,14 @@
     const corridor = game.scene === "corridor";
     elCount.hidden = !corridor;
     elRail.hidden = !corridor;
-    const hubTeach = game.scene === "hub" && !GUEST && courseSections().length > 0;
+    const hubTeach = game.scene === "hub" && AUTHOR() && courseSections().length > 0;
     btnMenu.hidden = !(corridor || hubTeach);
-    btnAdd.hidden = !(corridor || hubTeach) || !!GUEST;
-    btnData.hidden = !corridor || !!GUEST;
-    btnTree.hidden = !!GUEST || titleShown;
+    btnAdd.hidden = !(corridor || hubTeach) || !AUTHOR();
+    btnData.hidden = !corridor || !AUTHOR();
+    btnTree.hidden = !AUTHOR() || titleShown;
+    elMode.hidden = !!GUEST || titleShown;
+    $("mode-play").classList.toggle("on", PLAY);
+    $("mode-build").classList.toggle("on", !PLAY);
     elWhere.innerHTML =
       corridor ? esc(secTitle()) + "<small>" + esc(secSub()) + "</small>"
       : game.scene === "street" ? esc(ACADEMY.title || "Академия") + "<small>" + esc(ACADEMY.place || "") + "</small>"
@@ -1499,6 +1553,12 @@
     mark("enter", 0);
     game.fadeDir = -1;
     syncChrome();
+    // Прямой адрес из мастерской: #go=<раздел>/<стенд> — сразу к этому месту.
+    const m = /(?:^|[#&])go=([^/&]+)(?:\/([^&]+))?/.exec(location.hash || "");
+    if (m) {
+      const where = findDoor(decodeURIComponent(m[1]));
+      if (where && where.d.open) setTimeout(() => jumpToCorridor(where.b, where.c, where.d, m[2] ? decodeURIComponent(m[2]) : ""), 250);
+    }
   }
   $("start").addEventListener("click", startGame);
 
@@ -2189,7 +2249,8 @@
     SEEN_KEY = seenKeyFor(PID);
     seen = seenSetFor(PID);
     const saved = await storeGet(PID);
-    const hasLocal = saved && Array.isArray(saved.stands) && saved.stands.length;
+    // Пустой набор — тоже набор: методист мог убрать все стенды раздела в мастерской.
+    const hasLocal = saved && Array.isArray(saved.stands) && (saved.stands.length || saved.version);
     let list = SEED.stands || [];
     let replaced = false;
     // Название читается независимо от стендов: в новом разделе их может не быть вовсе.
@@ -2223,22 +2284,32 @@
 
   /* ═══ пуск ════════════════════════════════════════════════════════════ */
   (async () => {
+    // Структура, заданная методистом в мастерской этого браузера, перекрывает файл;
+    // то, что появилось в файле позже, к ней добавляется.
+    const ovA = await storeGet(MODEL.KEY_ACADEMY);
+    if (ovA && Array.isArray(ovA.buildings)) BUILDINGS = MODEL.mergeStructure(ACADEMY.buildings || [], ovA.buildings).buildings;
+    const ovL = await storeGet(MODEL.KEY_LINKS);
+    const rawLinks = (ovL && Array.isArray(ovL.links)) ? ovL.links : (((window.SKIPI_LINKS || {}).links) || []);
+    LINKS = rawLinks.map(MODEL.normalizeLink).filter(Boolean);
     const ids = [];
     BUILDINGS.forEach((b) => (b.courses || []).forEach((c) => (c.doors || []).forEach((d) => {
       if (d.pavilion && ids.indexOf(d.pavilion) < 0) ids.push(d.pavilion);
     })));
     await loadPavilions(ids);
-    // названия, данные преподавателем в этом браузере, — на двери вестибюля
+    // названия, данные преподавателем в этом браузере, — на двери вестибюля;
+    // раздел без файла, созданный в мастерской, живёт только в браузере
     for (const id of ids) {
-      const p = PAVS[id]; if (!p) continue;
+      const p = PAVS[id];
       const saved = await storeGet(id);
-      if (saved && saved.title && saved.seedFingerprint === fingerprint(p.stands)) {
+      if (!p && saved && saved.version) LOCAL_ONLY[id] = true;
+      const fp = fingerprint(p ? p.stands : []);
+      if (saved && saved.title && saved.seedFingerprint === fp) {
         TITLES[id] = { title: String(saved.title), subtitle: String(saved.subtitle || "") };
       }
     }
-    // раздел без загруженного содержания закрываем: пустой коридор хуже честной двери
+    // раздел без содержания ни в файле, ни в браузере закрываем: пустой коридор хуже честной двери
     BUILDINGS.forEach((b) => (b.courses || []).forEach((c) => (c.doors || []).forEach((d) => {
-      if (d.pavilion && !PAVS[d.pavilion]) d.open = false;
+      if (d.pavilion && !PAVS[d.pavilion] && !LOCAL_ONLY[d.pavilion]) d.open = false;
     })));
     setLevel("street");
     syncChrome();

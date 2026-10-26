@@ -26,6 +26,7 @@
     buildings: [],            // структура (см. model.cloneStructure)
     sections: {},             // id → {id, title, subtitle, stands[], hasFile, fileFp, fileStands[], fileTitle}
     links: [],
+    guests: {},               // ключ ссылки → {name, role, note, local}
     trash: [],
     sel: { type: "academy" },
     expanded: new Set(),
@@ -41,6 +42,37 @@
       s.src = src; s.onload = () => res(true); s.onerror = () => res(false);
       document.head.appendChild(s);
     });
+  }
+
+  /* ─── ключ преподавателя ────────────────────────────────────────────────
+     Засов, а не замок: страница статическая, отпечаток лежит открыто. Он
+     отделяет рабочее место от слушателя, а не защищает материал. Пока
+     отпечаток не задан, мастерская открыта и говорит об этом вслух. */
+  const KEY_HASH = String(((window.SKIPI_STUDIO || {}).keyHash) || "").trim().toLowerCase();
+  const KEY_STORE = "skipi-studio/key";
+  async function sha256(text) {
+    if (!(crypto && crypto.subtle)) return "";
+    const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+    return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
+  }
+  async function keyAccepted(word) { return !!word && (await sha256(word)) === KEY_HASH; }
+  async function passGate() {
+    if (!KEY_HASH) return true;
+    let saved = ""; try { saved = localStorage.getItem(KEY_STORE) || ""; } catch (e) { saved = ""; }
+    return await keyAccepted(saved);
+  }
+  function showGate() {
+    const g = $("gate"); g.hidden = false;
+    setTimeout(() => $("gate-key").focus(), 50);
+    const tryKey = async () => {
+      const w = $("gate-key").value;
+      if (await keyAccepted(w)) {
+        try { localStorage.setItem(KEY_STORE, w); } catch (e) { /* не страшно */ }
+        g.hidden = true; start();
+      } else { $("gate-err").hidden = false; $("gate-key").select(); }
+    };
+    $("gate-ok").addEventListener("click", tryKey);
+    $("gate-key").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); tryKey(); } });
   }
 
   const allDoors = () => { const out = []; S.buildings.forEach((b) => b.courses.forEach((c) => c.doors.forEach((d) => out.push({ b, c, d })))); return out; };
@@ -89,6 +121,15 @@
     const ovL = await M.storeGet(M.KEY_LINKS);
     const raw = (ovL && Array.isArray(ovL.links)) ? ovL.links : (((window.SKIPI_LINKS || {}).links) || []);
     S.links = raw.map(M.normalizeLink).filter(Boolean);
+    // Слушатели: опубликованные из файла плюс заведённые в этом браузере.
+    const fileG = window.SKIPI_GUESTS || {};
+    const savedG = await M.storeGet("__guests");
+    S.guests = {};
+    for (const [k, v] of Object.entries(fileG)) S.guests[k] = { name: v.name || k, role: v.role || "cadet", note: v.note || "", local: false };
+    if (savedG && savedG.guests) for (const [k, v] of Object.entries(savedG.guests)) {
+      const was = S.guests[k];
+      S.guests[k] = { name: v.name || k, role: v.role || "cadet", note: v.note || "", local: !was || was.name !== v.name };
+    }
     const tr = await M.storeGet(M.KEY_TRASH);
     S.trash = (tr && Array.isArray(tr.items)) ? tr.items : [];
     if (!S.expanded.size) S.buildings.forEach((b) => { S.expanded.add("b:" + b.id); b.courses.forEach((c) => S.expanded.add("c:" + c.id)); });
@@ -151,6 +192,11 @@
     setStatus("сохраняю…", true);
     await M.storeSet(M.KEY_LINKS, { version: 1, savedAt: new Date().toISOString(), links: S.links });
     setStatus("сохранено " + nowTime());
+  }
+  async function saveGuests() {
+    const out = {};
+    for (const [k, v] of Object.entries(S.guests)) out[k] = { name: v.name, role: v.role, note: v.note };
+    await M.storeSet("__guests", { version: 1, savedAt: new Date().toISOString(), guests: out });
   }
   async function saveTrash() { await M.storeSet(M.KEY_TRASH, { version: 1, savedAt: new Date().toISOString(), items: S.trash }); }
   const timers = {};
@@ -1109,6 +1155,77 @@
   $("map-x").addEventListener("click", () => closeSheet($("sh-map")));
   $("sh-map").addEventListener("pointerdown", (e) => { if (e.target === $("sh-map")) closeSheet($("sh-map")); });
 
+  /* ═══ слушатели ═══════════════════════════════════════════════════════
+     Ссылка `?g=<ключ>` — это не пароль: её можно переслать, отзывается она
+     правкой файла и публикацией. Пока ключ заведён только в браузере,
+     ссылка ещё не работает ни у кого, и в списке это сказано. */
+  const guestKey = (name) => {
+    let base = slug(name) || "guest";
+    let k = base, n = 2;
+    while (S.guests[k]) k = base + "-" + (n++);
+    return k;
+  };
+  const guestLink = (k) => location.href.replace(/[^/]*$/, "") + "index.html?g=" + encodeURIComponent(k);
+  async function addGuest() {
+    const name = $("gs-name").value.trim();
+    if (!name) { toast("Имя не может быть пустым"); return; }
+    const k = guestKey(name);
+    S.guests[k] = { name, role: "cadet", note: "Персональный вход слушателя", local: true };
+    await saveGuests();
+    $("gs-name").value = "";
+    buildGuests();
+    toast("Слушатель заведён. Ссылка заработает после публикации");
+  }
+  function buildGuests() {
+    const list = $("gs-list"); list.innerHTML = "";
+    const keys = Object.keys(S.guests);
+    const pending = keys.filter((k) => S.guests[k].local).length;
+    $("gs-lead").textContent = keys.length
+      ? "Заведено " + keys.length + (pending ? ", из них ещё не опубликовано " + pending : ", все опубликованы") + "."
+      : "Пока никого. Слушатель заходит по персональной ссылке, учётных записей у павильона нет.";
+    if (!keys.length) { list.appendChild(el("div", "empty", "Пока никого.")); }
+    keys.forEach((k) => {
+      const g = S.guests[k];
+      const r = el("div", "trow");
+      r.appendChild(el("span", "t", g.name));
+      r.appendChild(el("span", "m", g.local ? "только в браузере" : "опубликован"));
+      r.appendChild(btn("копировать ссылку", "sm", async () => {
+        try { await navigator.clipboard.writeText(guestLink(k)); toast("Ссылка скопирована"); }
+        catch (e) { prompt("Скопируйте ссылку:", guestLink(k)); }
+      }));
+      r.appendChild(btn("убрать", "sm warn", async () => {
+        if (!confirm("Убрать слушателя «" + g.name + "»? Его ссылка перестанет работать после следующей публикации.")) return;
+        delete S.guests[k]; await saveGuests(); buildGuests();
+      }));
+      list.appendChild(r);
+    });
+    $("gs-key-state").textContent = KEY_HASH
+      ? "Мастерская закрыта ключом. Чтобы сменить слово — задайте новое и пришлите отпечаток разработчику."
+      : "Мастерская сейчас ОТКРЫТА всякому, у кого есть адрес. Задайте слово и пришлите отпечаток разработчику — он положит его в файл и опубликует.";
+  }
+  $("btn-guests").addEventListener("click", () => { buildGuests(); openSheet($("sh-guests")); });
+  $("gs-add").addEventListener("click", addGuest);
+  $("gs-name").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); addGuest(); } });
+  $("gs-key-calc").addEventListener("click", async () => {
+    const w = $("gs-key").value;
+    if (!w) { toast("Введите слово"); return; }
+    const h = await sha256(w);
+    if (!h) { toast("Браузер не считает отпечаток на этой странице"); return; }
+    $("gs-key").value = "";
+    const out = $("gs-key-out");
+    out.hidden = false;
+    out.innerHTML = "Отпечаток (само слово никуда не уходит, присылайте только эту строку):<br><code style=\"font-family:var(--mono); font-size:11px; background:#f0f0f0; padding:1px 3px\">" + esc(h) + "</code>";
+    try { localStorage.setItem(KEY_STORE, w); } catch (e) { /* не страшно */ }
+    try { await navigator.clipboard.writeText(h); toast("Отпечаток скопирован"); } catch (e) { toast("Отпечаток показан ниже"); }
+  });
+  $("gs-key-forget").addEventListener("click", () => {
+    try { localStorage.removeItem(KEY_STORE); } catch (e) { /* не страшно */ }
+    toast(KEY_HASH ? "Забыт. При следующем входе спросит ключ" : "Забыт");
+  });
+  $("gs-x").addEventListener("click", () => closeSheet($("sh-guests")));
+  $("gs-done").addEventListener("click", () => closeSheet($("sh-guests")));
+  $("sh-guests").addEventListener("pointerdown", (e) => { if (e.target === $("sh-guests")) closeSheet($("sh-guests")); });
+
   /* ═══ данные ══════════════════════════════════════════════════════════ */
   function download(name, obj) {
     const blob = new Blob([JSON.stringify(obj, null, 2)], { type: "application/json" });
@@ -1119,7 +1236,8 @@
   function exportAll() {
     const sections = {};
     Object.values(S.sections).forEach((s) => { sections[s.id] = { pavilion: s.id, title: s.title, subtitle: s.subtitle, hasFile: s.hasFile, changed: M.fingerprint(s.stands) !== s.fileFp, stands: s.stands.map(M.plainStand) }; });
-    download("skipi-academy-" + today() + ".json", { format: "skipi-academy", version: 1, exportedAt: new Date().toISOString(), academy: { title: FILE_ACADEMY.title, place: FILE_ACADEMY.place, buildings: M.cloneStructure(S.buildings) }, sections, links: S.links });
+    download("skipi-academy-" + today() + ".json", { format: "skipi-academy", version: 1, exportedAt: new Date().toISOString(), academy: { title: FILE_ACADEMY.title, place: FILE_ACADEMY.place, buildings: M.cloneStructure(S.buildings) }, sections, links: S.links,
+      guests: Object.fromEntries(Object.entries(S.guests).map(([k, v]) => [k, { name: v.name, role: v.role, note: v.note }])) });
     toast("Файл академии выгружен");
   }
   function exportSection(id) {
@@ -1223,5 +1341,11 @@
   });
   $("btn-pav").addEventListener("click", setBuildMode);
   setBuildMode();
-  load().catch((e) => { setStatus("ошибка загрузки"); console.error(e); toast("Не удалось загрузить: " + e.message); });
+
+  function start() {
+    const cell = document.querySelector(".statusbar .cell:nth-child(3)");
+    if (cell && !KEY_HASH) { cell.textContent = "Мастерская открыта всем — ключ не задан"; cell.style.color = "#800000"; }
+    load().catch((e) => { setStatus("ошибка загрузки"); console.error(e); toast("Не удалось загрузить: " + e.message); });
+  }
+  passGate().then((ok) => { if (ok) start(); else showGate(); });
 })();

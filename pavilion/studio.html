@@ -255,6 +255,12 @@
   .map-body .edge{fill:none; stroke-width:2; opacity:.9}
   .map-body .edge:hover{stroke-width:3.5; opacity:1}
 
+  .gate{position:fixed; inset:0; z-index:90; background:var(--face); display:flex; align-items:center; justify-content:center}
+  .gate-win{width:min(420px,92%); background:var(--face); box-shadow:var(--raise), 0 0 0 1px #000}
+  .gate-win h2{margin:0; font-size:12px; font-weight:bold; color:#fff; background:linear-gradient(90deg,var(--title-a),var(--title-b)); padding:3px 8px; height:22px; display:flex; align-items:center}
+  .gate-body{padding:14px}
+  .gate-body p{margin:0 0 12px}
+  .gate-err{color:#800000}
   #toast{position:fixed; left:50%; bottom:34px; transform:translateX(-50%); z-index:70; opacity:0; pointer-events:none;
     transition:opacity .12s; background:#ffffe1; border:1px solid #000; padding:3px 8px; font-size:11px; color:#000}
   #toast.on{opacity:1}
@@ -277,10 +283,25 @@
 </head>
 <body>
 
+<div class="gate" id="gate" hidden>
+  <div class="gate-win">
+    <h2>Мастерская методиста</h2>
+    <div class="gate-body">
+      <p>Это рабочее место преподавателя. Слушателям сюда не нужно.</p>
+      <div class="f"><label for="gate-key">Ключ преподавателя</label>
+        <input type="password" id="gate-key" autocomplete="off"></div>
+      <div class="bar"><button class="tool add" id="gate-ok">Войти</button>
+        <a class="tool" href="index.html">В павильон</a><span class="sp"></span></div>
+      <p class="gate-err" id="gate-err" hidden>Ключ не подошёл.</p>
+    </div>
+  </div>
+</div>
+
 <div class="titlebar"><span class="ico"></span><span>Мастерская методиста</span><small>— Skipi Education</small><span class="sp"></span></div>
 <div class="menubar">
   <span class="mi" id="btn-data">Данные</span>
   <span class="mi" id="btn-map">Карта связей</span>
+  <span class="mi" id="btn-guests">Слушатели</span>
   <a class="mi" id="btn-pav" href="index.html" target="pavilion">Павильон…</a>
   <span class="sp"></span>
 </div>
@@ -346,6 +367,33 @@
   </div>
 </div>
 
+<!-- слушатели -->
+<div class="sheet" id="sh-guests">
+  <div class="card">
+    <h2>Слушатели и их ссылки</h2>
+    <button class="card-x" id="gs-x" aria-label="Закрыть">×</button>
+    <p class="lead" id="gs-lead">—</p>
+    <div class="sec-h">Добавить слушателя</div>
+    <div class="bar">
+      <input type="text" id="gs-name" placeholder="Имя, как подписать на экране" style="flex:1; min-width:200px; padding:3px 5px; height:23px; background:var(--win); border:none; box-shadow:var(--sunk); outline:none">
+      <button class="tool add" id="gs-add">Добавить</button>
+    </div>
+    <div class="sec-h">Кто заведён</div>
+    <div class="tbl" id="gs-list"><div class="empty">Пока никого.</div></div>
+    <p style="margin:0 12px 8px; color:var(--muted)">Ссылка открывает павильон в режиме слушателя: ни мастерской, ни правки, ни дерева.
+      <b>Это не пароль:</b> ссылку можно переслать, и отзывается она только правкой файла и публикацией.</p>
+    <div class="sec-h">Ключ преподавателя</div>
+    <p style="margin:0 12px 8px; color:var(--muted)" id="gs-key-state">—</p>
+    <div class="bar">
+      <input type="password" id="gs-key" placeholder="задать слово" style="flex:1; min-width:160px; padding:3px 5px; height:23px; background:var(--win); border:none; box-shadow:var(--sunk); outline:none">
+      <button class="tool" id="gs-key-calc">Показать отпечаток</button>
+      <button class="tool" id="gs-key-forget">Забыть в этом браузере</button>
+    </div>
+    <p style="margin:0 12px 8px; color:var(--muted)" id="gs-key-out" hidden></p>
+    <div class="bar" style="margin-top:12px"><span class="sp"></span><button class="tool" id="gs-done">Закрыть</button></div>
+  </div>
+</div>
+
 <!-- карта связей -->
 <div class="sheet" id="sh-map">
   <div class="card wide">
@@ -364,6 +412,8 @@
 
 <script src="content/academy.js"></script>
 <script src="content/links.js"></script>
+<script src="content/guests.js"></script>
+<script src="content/studio-key.js"></script>
 <script src="model.js"></script>
 <script src="studio.js"></script>
 </body>

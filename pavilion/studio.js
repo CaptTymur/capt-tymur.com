@@ -703,9 +703,7 @@
     box.appendChild(el("div", "sec-h", "Видео к занятию"));
     box.appendChild(rowsBlock(s.videos, [["label", "подпись"], ["url", "адрес видео (не YouTube)"]], () => ({ label: "Видео к занятию", url: "" }), save, (v) => !!v.url));
     box.appendChild(el("div", "sec-h", "Файлы для скачивания"));
-    box.appendChild(rowsBlock(s.downloads, [["label", "подпись"], ["file", "путь к файлу, например content/files/x.pdf"]], () => ({ label: "", file: "", hold: false, holdWhy: "" }), save, (d) => !!d.file, (d, row) => {
-      row.appendChild(check("не выложен", d.hold, (v) => { d.hold = v; save(); }));
-    }));
+    box.appendChild(filesBlock(s, save));
   }
 
   function iconCanvas(name) {
@@ -714,6 +712,90 @@
     const ctx = c.getContext("2d"); ctx.fillStyle = "#000";
     for (let r = 0; r < g.length; r++) for (let k = 0; k < g[r].length; k++) if (g[r][k] === "#") ctx.fillRect(k * 3, r * 3, 3, 3);
     return c;
+  }
+
+  /* ─── файлы и артефакты на стенде ───────────────────────────────────────
+     Книга, конспект, таблица грузятся прямо сюда и живут в этом браузере, пока
+     не уедут в публикацию. Путь к уже опубликованному файлу тоже принимается —
+     так заведены материалы, положенные в репозиторий руками. */
+  const MAX_FILE = 90 * 1024 * 1024;          // предел GitHub Pages на один файл — 100 МБ
+  const WARN_FILE = 25 * 1024 * 1024;
+  async function addFiles(stand, fileList, save) {
+    let added = 0;
+    for (const f of fileList) {
+      if (f.size > MAX_FILE) { toast("«" + f.name + "» больше 90 МБ — столько не публикуется"); continue; }
+      if (f.size > WARN_FILE && !confirm("«" + f.name + "» весит " + M.niceSize(f.size)
+        + ". Такой файл уедет в репозиторий и останется в его истории навсегда. Загрузить?")) continue;
+      const rec = await M.putFile(f);
+      if (!rec) { toast("Не удалось сохранить «" + f.name + "»: в браузере кончилось место"); continue; }
+      stand.downloads.push({ label: rec.name.replace(/\.[^.]+$/, ""), file: "", fileId: rec.id,
+        name: rec.name, size: rec.size, type: rec.type, hold: false, holdWhy: "" });
+      added++;
+    }
+    if (added) { await save(); renderInspector(); toast(added === 1 ? "Файл загружен" : "Загружено файлов: " + added); }
+  }
+  function filesBlock(s, save) {
+    const w = el("div");
+    const list = el("div", "list");
+    (s.downloads || []).forEach((d, i) => {
+      const r = el("div", "item");
+      const kind = el("span", "fkind", ((d.name || d.file || "").split(".").pop() || "файл").toUpperCase().slice(0, 5));
+      r.appendChild(kind);
+      const lab = el("input"); lab.type = "text"; lab.placeholder = "подпись на стенде"; lab.value = d.label;
+      lab.addEventListener("input", () => { d.label = lab.value; save(); });
+      r.appendChild(lab);
+      const state = el("span", "fstate");
+      state.textContent = d.file ? "опубликован" : (d.fileId ? M.niceSize(d.size || 0) + " · в браузере" : "нет файла");
+      if (!d.file && d.fileId) state.classList.add("local");
+      r.appendChild(state);
+      r.appendChild(check("не выкладывать", d.hold, (v) => { d.hold = v; save(); renderInspector(); }));
+      const open = el("button", "mv", "открыть");
+      open.addEventListener("click", async () => {
+        if (d.file) { window.open(d.file, "_blank", "noopener"); return; }
+        const rec = await M.getFile(d.fileId);
+        if (!rec || !rec.blob) { toast("Файла нет в этом браузере"); return; }
+        const u = URL.createObjectURL(rec.blob);
+        window.open(u, "_blank", "noopener");
+        setTimeout(() => URL.revokeObjectURL(u), 20000);
+      });
+      r.appendChild(open);
+      const del = el("button", "x", "×");
+      del.addEventListener("click", async () => {
+        if (!confirm("Убрать «" + (d.label || d.name) + "» со стенда?" + (d.fileId ? " Загруженный файл будет удалён из браузера." : ""))) return;
+        if (d.fileId) await M.delFile(d.fileId);
+        s.downloads.splice(i, 1); await save(); renderInspector();
+      });
+      r.appendChild(del);
+      list.appendChild(r);
+    });
+    w.appendChild(list);
+    const z = el("div", "drop");
+    z.tabIndex = 0;
+    z.appendChild(el("div", "drop-t", "Перетащите сюда книгу, конспект или таблицу — файл ляжет к нам, а не останется ссылкой"));
+    const bar = el("div", "drop-bar");
+    bar.appendChild(btn("загрузить файлы…", "sm add", () => { fileSink = (fs) => addFiles(s, fs, save); $("file-any").click(); }));
+    bar.appendChild(btn("указать путь вручную", "sm", () => {
+      const p = prompt("Путь к уже опубликованному файлу, например content/files/book.pdf");
+      if (!p) return;
+      s.downloads.push({ label: p.split("/").pop(), file: p.trim(), fileId: "", name: p.split("/").pop(), size: 0, type: "", hold: false, holdWhy: "" });
+      save(); renderInspector();
+    }));
+    z.appendChild(bar);
+    z.addEventListener("dragover", (e) => { e.preventDefault(); z.classList.add("over"); });
+    z.addEventListener("dragleave", () => z.classList.remove("over"));
+    z.addEventListener("drop", async (e) => {
+      e.preventDefault(); z.classList.remove("over");
+      const fs = [...((e.dataTransfer && e.dataTransfer.files) || [])];
+      if (!fs.length) { toast("Файлов в броске нет"); return; }
+      await addFiles(s, fs, save);
+    });
+    w.appendChild(z);
+    const note = el("div", "hint");
+    note.style.marginTop = "6px";
+    note.textContent = "Загруженный файл уедет в публикацию и станет доступен по прямой ссылке всякому, кто её знает: "
+      + "репозиторий сайта публичный. Для чужих материалов ставьте «не выкладывать» — запись останется, файл наружу не уйдёт.";
+    w.appendChild(note);
+    return w;
   }
 
   /* ─── изображения ───────────────────────────────────────────────────── */
@@ -738,7 +820,12 @@
       return url;
     } catch (e) { toast("Не удалось прочитать изображение"); return null; }
   }
-  let imgSink = null;      // (srcs: string[]) => куда класть выбранные файлы
+  let fileSink = null;     // (files: File[]) => куда класть выбранные файлы любого вида
+  $("file-any").addEventListener("change", async () => {
+    const fs = [...(($("file-any").files) || [])]; $("file-any").value = "";
+    if (fs.length && fileSink) await fileSink(fs);
+  });
+  let imgSink = null;      // (srcs: string[]) => куда класть выбранные картинки
   $("file-img").addEventListener("change", async () => {
     const fs = [...(($("file-img").files) || [])]; $("file-img").value = "";
     if (!fs.length || !imgSink) return;
@@ -1233,12 +1320,23 @@
     document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
   }
   const today = () => new Date().toISOString().slice(0, 10);
-  function exportAll() {
+  async function exportAll() {
     const sections = {};
     Object.values(S.sections).forEach((s) => { sections[s.id] = { pavilion: s.id, title: s.title, subtitle: s.subtitle, hasFile: s.hasFile, changed: M.fingerprint(s.stands) !== s.fileFp, stands: s.stands.map(M.plainStand) }; });
+    // Загруженные файлы едут вместе: иначе на той стороне будут записи без содержимого.
+    const used = new Set();
+    Object.values(S.sections).forEach((sec) => sec.stands.forEach((st) => (st.downloads || []).forEach((d) => { if (d.fileId) used.add(d.fileId); })));
+    const files = {};
+    let heavy = 0;
+    for (const id of used) {
+      const rec = await M.getFile(id);
+      if (!rec || !rec.blob) continue;
+      files[id] = { name: rec.name, type: rec.type, size: rec.size, base64: await M.blobToBase64(rec.blob) };
+      heavy += rec.size;
+    }
     download("skipi-academy-" + today() + ".json", { format: "skipi-academy", version: 1, exportedAt: new Date().toISOString(), academy: { title: FILE_ACADEMY.title, place: FILE_ACADEMY.place, buildings: M.cloneStructure(S.buildings) }, sections, links: S.links,
-      guests: Object.fromEntries(Object.entries(S.guests).map(([k, v]) => [k, { name: v.name, role: v.role, note: v.note }])) });
-    toast("Файл академии выгружен");
+      guests: Object.fromEntries(Object.entries(S.guests).map(([k, v]) => [k, { name: v.name, role: v.role, note: v.note }])), files });
+    toast(Object.keys(files).length ? "Выгружено, файлов внутри " + Object.keys(files).length + " (" + M.niceSize(heavy) + ")" : "Файл академии выгружен");
   }
   function exportSection(id) {
     const s = S.sections[id];

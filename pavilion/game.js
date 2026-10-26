@@ -306,43 +306,9 @@
     catch (e) { return new Set(); }
   }
 
-  function normalize(raw, i) {
-    return {
-      id: raw.id || newId(),
-      short: String(raw.short || "СТЕНД").trim() || "СТЕНД",
-      icon: ICONS[raw.icon] ? raw.icon : "book",
-      accent: raw.accent || ACCENTS[i % ACCENTS.length],
-      title: raw.title || "",
-      lead: raw.lead || "",
-      body: Array.isArray(raw.body) ? raw.body.slice() : (raw.body ? [String(raw.body)] : []),
-      pointsTitle: raw.pointsTitle || "",
-      points: Array.isArray(raw.points) ? raw.points.slice() : [],
-      note: raw.note || "",
-      image: raw.image || null,          // dataURL либо путь к файлу
-      caption: raw.caption || "",
-      images: Array.isArray(raw.images)
-        ? raw.images.filter((im) => im && im.src).map((im) => ({
-            src: String(im.src), caption: String(im.caption || "")
-          }))
-        : [],
-      videos: Array.isArray(raw.videos)
-        ? raw.videos.filter((v) => v && v.url).map((v) => ({
-            label: String(v.label || "Видео к занятию"),
-            url: String(v.url)
-          }))
-        : [],
-      downloads: Array.isArray(raw.downloads)
-        ? raw.downloads.filter((d) => d && d.file).map((d) => ({
-            label: String(d.label || d.file),
-            file: String(d.file),
-            hold: !!d.hold,
-            holdWhy: d.holdWhy ? String(d.holdWhy) : ""
-          }))
-        : [],
-      draft: !!raw.draft,
-      custom: !!raw.custom
-    };
-  }
+  // Одна нормализация на обе страницы: своя копия здесь уже расходилась с
+  // мастерской и теряла файлы, загруженные преподавателем (у них нет пути).
+  const normalize = (raw, i) => MODEL.normalizeStand(raw, i);
 
   function relayout() {
     stands.forEach((s, i) => { s.index = i; s.x = FIRST_X + i * GAP; });
@@ -354,12 +320,7 @@
   }
 
   async function save() {
-    const plain = stands.map((s) => ({
-      id: s.id, short: s.short, icon: s.icon, accent: s.accent, title: s.title, lead: s.lead,
-      body: s.body, pointsTitle: s.pointsTitle, points: s.points, note: s.note,
-      image: s.image, caption: s.caption, images: s.images, videos: s.videos, downloads: s.downloads,
-      draft: s.draft, custom: s.custom
-    }));
+    const plain = stands.map(MODEL.plainStand);
     await storeSet(PID, {
       version: 2, savedAt: new Date().toISOString(),
       seedFingerprint: SEED_FP, stands: plain,
@@ -845,10 +806,30 @@
     h.className = "dl-h"; h.style.color = s.accent; h.textContent = "Скачать";
     body.appendChild(h);
     list.forEach((d) => {
-      const kind = (d.file.split(".").pop() || "файл").toUpperCase().slice(0, 5);
-      const row = document.createElement(d.hold ? "div" : "a");
+      // Файл либо опубликован (путь), либо загружен преподавателем и живёт пока
+      // в его браузере (fileId). Во втором случае у слушателя его нет — и об этом
+      // честнее сказать строкой, чем дать ссылку в никуда.
+      const pending = !d.file && !!d.fileId;
+      const kind = ((d.name || d.file || "файл").split(".").pop() || "файл").toUpperCase().slice(0, 5);
+      const row = document.createElement(d.hold || pending ? "div" : "a");
       row.className = "dl" + (d.hold ? " held" : "");
-      if (!d.hold) {
+      if (pending) {
+        row.classList.add("held");
+        MODEL.getFile(d.fileId).then((rec) => {
+          if (!rec || !rec.blob) return;                 // чужой браузер: файла нет, строка остаётся
+          row.classList.remove("held");
+          row.style.cursor = "pointer";
+          const why = row.querySelector(".why"); if (why) why.textContent = "ещё не опубликован, но у вас он есть";
+          const arrow = row.querySelector(".arrow"); if (arrow) arrow.textContent = "↓";
+          row.addEventListener("click", () => {
+            const u = URL.createObjectURL(rec.blob);
+            const a = document.createElement("a");
+            a.href = u; a.download = rec.name || d.label || "файл";
+            document.body.appendChild(a); a.click(); a.remove();
+            setTimeout(() => URL.revokeObjectURL(u), 20000);
+          });
+        });
+      } else if (!d.hold) {
         row.href = d.file;
         row.setAttribute("download", "");
         row.rel = "noopener";
@@ -857,14 +838,14 @@
       k.className = "kind"; k.textContent = kind;
       const txt = document.createElement("span");
       txt.textContent = d.label;
-      if (d.hold) {
+      if (d.hold || pending) {
         const why = document.createElement("span");
         why.className = "why";
-        why.textContent = d.holdWhy || "файл пока не выложен";
+        why.textContent = d.hold ? (d.holdWhy || "файл пока не выложен") : "будет доступен после публикации";
         txt.appendChild(why);
       }
       const a = document.createElement("span");
-      a.className = "arrow"; a.textContent = d.hold ? "—" : "↓";
+      a.className = "arrow"; a.textContent = (d.hold || pending) ? "—" : "↓";
       row.appendChild(k); row.appendChild(txt); row.appendChild(a);
       body.appendChild(row);
     });

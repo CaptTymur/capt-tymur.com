@@ -175,6 +175,9 @@
   .item .x:active,.item .mv:active{box-shadow:var(--press)}
   .item .mv:disabled{color:var(--shade); text-shadow:1px 1px 0 var(--light)}
   .item label.chk{margin:0; font-size:11px; white-space:nowrap}
+  .item .fkind{font-family:var(--mono); font-size:9px; padding:2px 5px; background:var(--face); box-shadow:var(--raise); flex:0 0 auto; min-width:38px; text-align:center}
+  .item .fstate{font-size:11px; color:var(--dim); white-space:nowrap; flex:0 0 auto}
+  .item .fstate.local{color:#800000}
 
   .tbl{display:flex; flex-direction:column; margin-bottom:8px; box-shadow:var(--sunk); background:var(--win); padding:2px}
   .trow{display:flex; align-items:center; gap:6px; padding:1px 4px; height:20px; cursor:default}
@@ -407,6 +410,7 @@
 </div>
 
 <input type="file" id="file-img" accept="image/*" multiple hidden>
+<input type="file" id="file-any" multiple hidden>
 <input type="file" id="file-json" accept="application/json,.json" hidden>
 <div id="toast"></div>
 

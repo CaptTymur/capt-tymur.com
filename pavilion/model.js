@@ -22,6 +22,9 @@
   "use strict";
   const DB_NAME = "skipi-education", STORE = "pavilions";
   const KEY_ACADEMY = "__academy", KEY_LINKS = "__links", KEY_TRASH = "__trash";
+  // Файлы и артефакты, загруженные преподавателем: ключ "file:<id>" → {name,type,size,blob}.
+  // Лежат отдельно от стендов, чтобы набор раздела оставался лёгким.
+  const FILE_PREFIX = "file:";
 
   let dbp = null;
   function db() {
@@ -84,6 +87,35 @@
     }
   }
 
+  /* ─── файлы и артефакты ────────────────────────────────────────────────
+     Хранятся как Blob: это дешевле строки и переживает перезагрузку. Пока файл
+     не опубликован, он есть только в браузере того, кто его загрузил. */
+  async function putFile(file) {
+    const id = newId("f");
+    const rec = { id, name: String(file.name || "файл"), type: String(file.type || "application/octet-stream"),
+      size: file.size, addedAt: new Date().toISOString(), blob: file };
+    const ok = await storeSet(FILE_PREFIX + id, rec);
+    return ok ? { id, name: rec.name, type: rec.type, size: rec.size } : null;
+  }
+  const getFile = (id) => storeGet(FILE_PREFIX + id);
+  const delFile = (id) => storeDel(FILE_PREFIX + id);
+  async function listFiles() {
+    const keys = (await storeKeys()).filter((k) => k.indexOf(FILE_PREFIX) === 0);
+    const out = [];
+    for (const k of keys) { const r = await getFile(k.slice(FILE_PREFIX.length)); if (r) out.push(r); }
+    return out;
+  }
+  function blobToBase64(blob) {
+    return new Promise((res, rej) => {
+      const fr = new FileReader();
+      fr.onload = () => { const s = String(fr.result); res(s.slice(s.indexOf(",") + 1)); };
+      fr.onerror = () => rej(fr.error);
+      fr.readAsDataURL(blob);
+    });
+  }
+  const niceSize = (n) => n >= 1048576 ? (n / 1048576).toFixed(1) + " МБ"
+    : n >= 1024 ? Math.round(n / 1024) + " КБ" : n + " б";
+
   /* Отпечаток содержания из файла. Нужен, чтобы отличить «человек правил стенды
      у себя» от «автор курса выложил новое содержание». Берём то, что меняется
      при смысловой правке: состав и порядок стендов, надписи, слайды, объём текста. */
@@ -138,9 +170,17 @@
       videos: Array.isArray(raw.videos)
         ? raw.videos.filter((v) => v && v.url).map((v) => ({ label: String(v.label || "Видео к занятию"), url: String(v.url) }))
         : [],
+      // file — путь к опубликованному файлу; fileId — файл, загруженный в этот
+      // браузер и ещё не уехавший в публикацию. Запись живёт при любом из двух.
       downloads: Array.isArray(raw.downloads)
-        ? raw.downloads.filter((d) => d && d.file).map((d) => ({
-            label: String(d.label || d.file), file: String(d.file), hold: !!d.hold, holdWhy: d.holdWhy ? String(d.holdWhy) : ""
+        ? raw.downloads.filter((d) => d && (d.file || d.fileId)).map((d) => ({
+            label: String(d.label || d.name || d.file || "Файл"),
+            file: d.file ? String(d.file) : "",
+            fileId: d.fileId ? String(d.fileId) : "",
+            name: d.name ? String(d.name) : "",
+            size: Number(d.size) || 0,
+            type: d.type ? String(d.type) : "",
+            hold: !!d.hold, holdWhy: d.holdWhy ? String(d.holdWhy) : ""
           }))
         : [],
       draft: !!raw.draft,
@@ -211,8 +251,9 @@
   }
 
   window.SKIPI_MODEL = {
-    DB_NAME, STORE, KEY_ACADEMY, KEY_LINKS, KEY_TRASH,
+    DB_NAME, STORE, KEY_ACADEMY, KEY_LINKS, KEY_TRASH, FILE_PREFIX,
     storeGet, storeSet, storeDel, storeKeys,
+    putFile, getFile, delFile, listFiles, blobToBase64, niceSize,
     fingerprint, ACCENTS, ICONS, ICON_NAMES, newId, normalizeStand, plainStand,
     cloneStructure, mergeStructure,
     LINK_KINDS, nodeKey, normalizeLink

@@ -257,6 +257,7 @@
     row.addEventListener("dblclick", () => { if (o.key && o.tw) { if (S.expanded.has(o.key)) S.expanded.delete(o.key); else S.expanded.add(o.key); rememberExpanded(); renderTree(); } });
     if (o.drag) bindDrag(row, o.drag);
     if (o.dropSec) bindDrop(row, o.dropSec, null);
+    if (o.node) bindFileDrop(row, o.node.stand ? { type: "stand", sec: o.node.sec, stand: o.node.stand } : { type: "section", sec: o.node.sec });
     return row;
   }
 
@@ -276,6 +277,19 @@
       if (!dragging) return; e.preventDefault();
       const r = row.getBoundingClientRect(); const top = e.clientY < r.top + r.height / 2;
       moveStand(dragging, d.sec, d.i + (top ? 0 : 1));
+    });
+  }
+  // Картинка, бро́шенная из системы прямо на строку дерева: на стенд или в раздел.
+  function bindFileDrop(row, sel) {
+    const isFiles = (e) => e.dataTransfer && [...(e.dataTransfer.types || [])].indexOf("Files") >= 0;
+    row.addEventListener("dragover", (e) => { if (dragging || !isFiles(e)) return; e.preventDefault(); row.classList.add("over-in"); });
+    row.addEventListener("dragleave", () => { if (!dragging) row.classList.remove("over-in"); });
+    row.addEventListener("drop", async (e) => {
+      if (dragging || !isFiles(e)) return;
+      e.preventDefault(); e.stopPropagation(); row.classList.remove("over-in");
+      const srcs = await imagesFrom(e.dataTransfer);
+      if (!srcs.length) { toast("Это не картинка"); return; }
+      await absorbImages(sel, srcs);
     });
   }
   function bindDrop(row, sec, atEnd) {
@@ -553,6 +567,10 @@
       tbl.appendChild(r);
     });
     box.appendChild(tbl);
+    box.appendChild(el("div", "sec-h", "Картинки в стенды"));
+    box.appendChild(dropZone((srcs) => absorbImages({ type: "section", sec: sec.id }, srcs),
+      "Перетащите сюда картинки или нажмите, чтобы выбрать файлы — каждая станет новым стендом. "
+      + "То же делает вставка из буфера, когда в дереве выбран этот раздел."));
   }
 
   /* ─── стенд ─────────────────────────────────────────────────────────── */
@@ -648,34 +666,80 @@
       return url;
     } catch (e) { toast("Не удалось прочитать изображение"); return null; }
   }
-  let imgSink = null;      // куда класть следующую картинку (файл или вставка)
+  let imgSink = null;      // (srcs: string[]) => куда класть выбранные файлы
   $("file-img").addEventListener("change", async () => {
-    const f = $("file-img").files && $("file-img").files[0]; $("file-img").value = "";
-    if (!f || !imgSink) return; const src = await ingestImage(f); if (src) imgSink(src);
+    const fs = [...(($("file-img").files) || [])]; $("file-img").value = "";
+    if (!fs.length || !imgSink) return;
+    const srcs = []; for (const f of fs) { const src = await ingestImage(f); if (src) srcs.push(src); }
+    if (srcs.length) await imgSink(srcs);
   });
-  addEventListener("paste", async (e) => {
-    if (S.sel.type !== "stand") return;
-    if (/^(INPUT|TEXTAREA)$/.test((e.target && e.target.tagName) || "") && e.target.dataset.f !== "short") {
-      // в текстовое поле вставляется текст; картинка из буфера — на стенд
-      const items = (e.clipboardData && e.clipboardData.items) || [];
-      if (![...items].some((it) => it.kind === "file" && /^image\//.test(it.type))) return;
+
+  // Картинки из буфера обмена или из броска: файлы, а если их нет — ссылка на картинку.
+  async function imagesFrom(dt) {
+    if (!dt) return [];
+    const out = [];
+    const files = [...(dt.files || [])].filter((f) => /^image\//.test(f.type));
+    const items = files.length ? [] : [...(dt.items || [])]
+      .filter((it) => it.kind === "file" && /^image\//.test(it.type)).map((it) => it.getAsFile()).filter(Boolean);
+    for (const f of (files.length ? files : items)) { const src = await ingestImage(f); if (src) out.push(src); }
+    if (!out.length) {
+      let t = ""; try { t = (dt.getData("text/plain") || "").trim(); } catch (e) { t = ""; }
+      if (/^(https?:\/\/\S+\.(png|jpe?g|gif|webp|svg)(\?\S*)?|data:image\/)/i.test(t)) out.push(t);
     }
-    const items = (e.clipboardData && e.clipboardData.items) || [];
-    let file = null; for (const it of items) if (it.kind === "file" && /^image\//.test(it.type)) { file = it.getAsFile(); break; }
-    if (!file) return;
-    e.preventDefault();
-    const src = await ingestImage(file); if (!src) return;
-    const s = standOf(S.sel.sec, S.sel.stand); if (!s) return;
-    if (!s.image) s.image = src; else s.images.push({ src, caption: "" });
-    await saveSection(S.sel.sec); renderInspector(); renderTree();
-    toast(s.images.length && s.image !== src ? "Снимок добавлен в слайды" : "Изображение вставлено на стенд");
+    return out;
+  }
+
+  /* Куда ложится картинка. Стенд — её место: первая на щит, остальные в слайды.
+     Выбран раздел — каждая картинка становится новым стендом (стенд = базовая
+     единица). Выбран курс или корпус — места нет, и об этом надо сказать вслух:
+     молчание здесь читается как «не работает». */
+  async function absorbImages(sel, srcs) {
+    if (!srcs || !srcs.length) return false;
+    if (sel.type === "stand") {
+      const st = standOf(sel.sec, sel.stand); if (!st) return false;
+      let board = 0, slides = 0;
+      srcs.forEach((src) => { if (!st.image) { st.image = src; board++; } else { st.images.push({ src, caption: "" }); slides++; } });
+      await saveSection(sel.sec); renderAll();
+      toast(slides ? (board ? "Картинка на щите, в слайды добавлено " + slides : "В слайды добавлено " + slides)
+        : "Картинка на стенде «" + st.short + "»");
+      return true;
+    }
+    if (sel.type === "section") {
+      const sec = S.sections[sel.sec]; if (!sec) return false;
+      let last = null;
+      srcs.forEach((src) => { const st = M.normalizeStand({ short: "НОВЫЙ", title: "", image: src, custom: true }, sec.stands.length); sec.stands.push(st); last = st; });
+      await saveSection(sel.sec);
+      if (srcs.length === 1) select({ type: "stand", sec: sel.sec, stand: last.id });
+      else renderAll();
+      toast(srcs.length === 1 ? "Создан стенд с этой картинкой — подпишите его" : "Создано стендов: " + srcs.length);
+      return true;
+    }
+    toast("Картинке нужно место: выберите в дереве раздел или стенд");
+    return false;
+  }
+
+  addEventListener("paste", async (e) => {
+    const dt = e.clipboardData;
+    const inField = /^(INPUT|TEXTAREA)$/.test((e.target && e.target.tagName) || "");
+    const hasImage = [...((dt && dt.items) || [])].some((it) => it.kind === "file" && /^image\//.test(it.type));
+    if (inField && !hasImage) return;            // обычная вставка текста в поле
+    if (hasImage) e.preventDefault();            // синхронно, до чтения файла
+    const srcs = await imagesFrom(dt);
+    if (!srcs.length) { if (!inField) toast("В буфере обмена нет картинки"); return; }
+    await absorbImages(S.sel, srcs);
   });
-  function dropZone(onSrc, text) {
-    const z = el("div", "drop", text || "Перетащите изображение сюда, нажмите, чтобы выбрать файл, или Ctrl+V");
-    z.addEventListener("click", () => { imgSink = onSrc; $("file-img").click(); });
+
+  function dropZone(onSrcs, text) {
+    const z = el("div", "drop", text || "Перетащите картинку сюда, нажмите, чтобы выбрать файл, или вставьте из буфера");
+    z.addEventListener("click", () => { imgSink = onSrcs; $("file-img").click(); });
     z.addEventListener("dragover", (e) => { e.preventDefault(); z.classList.add("over"); });
     z.addEventListener("dragleave", () => z.classList.remove("over"));
-    z.addEventListener("drop", async (e) => { e.preventDefault(); z.classList.remove("over"); const f = e.dataTransfer.files && e.dataTransfer.files[0]; const src = await ingestImage(f); if (src) onSrc(src); });
+    z.addEventListener("drop", async (e) => {
+      e.preventDefault(); z.classList.remove("over");
+      const srcs = await imagesFrom(e.dataTransfer);
+      if (!srcs.length) { toast("Это не картинка"); return; }
+      await onSrcs(srcs);
+    });
     return z;
   }
   function imageBlock(s, save) {
@@ -683,12 +747,12 @@
     if (s.image) {
       const z = el("div", "drop");
       const im = el("img"); im.src = s.image; z.appendChild(im);
-      z.appendChild(btn("заменить", "sm", () => { imgSink = (src) => { s.image = src; save(); renderInspector(); }; $("file-img").click(); }));
+      z.appendChild(btn("заменить", "sm", () => { imgSink = (srcs) => { s.image = srcs[0]; save(); renderInspector(); }; $("file-img").click(); }));
       z.appendChild(document.createTextNode(" "));
       z.appendChild(btn("убрать", "sm warn", () => { s.image = null; s.caption = ""; save(); renderInspector(); }));
       w.appendChild(z);
       w.appendChild(field("Подпись под изображением", s.caption, { on: (v) => { s.caption = v; save(); } }));
-    } else w.appendChild(dropZone((src) => { s.image = src; save(); renderInspector(); }));
+    } else w.appendChild(dropZone((srcs) => { s.image = srcs[0]; srcs.slice(1).forEach((x) => s.images.push({ src: x, caption: "" })); save(); renderInspector(); }));
     return w;
   }
   function slidesBlock(s, save) {
@@ -707,7 +771,7 @@
       list.appendChild(r);
     });
     w.appendChild(list);
-    w.appendChild(dropZone((src) => { s.images.push({ src, caption: "" }); save(); renderInspector(); }, "+ слайд: перетащите, выберите файл или Ctrl+V"));
+    w.appendChild(dropZone((srcs) => { srcs.forEach((src) => s.images.push({ src, caption: "" })); save(); renderInspector(); }, "+ слайд: перетащите, выберите файлы или вставьте из буфера"));
     return w;
   }
   function rowsBlock(arr, cols, mk, save, keep, extra) {

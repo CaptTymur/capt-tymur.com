@@ -578,9 +578,20 @@
     [sheetEd, sheetData, sheetTree, sheetMenu].forEach((el) => { if (el.classList.contains("on")) closeSheet(el); });
     toast("Режим игры: павильон как у слушателя");
   });
+  // Обратный переход: мастерская открывается на том месте, где стоит человечек.
+  function studioAddress() {
+    const enc = encodeURIComponent;
+    if (game.scene === "corridor" || game.scene === "room") {
+      const s = (game.focus && game.focus.kind === "stand" && game.focus.stand) || currentStand;
+      return "#sel=" + enc(PID) + (s ? "/" + enc(s.id) : "");
+    }
+    if (game.scene === "hub" && building && course) return "#sel=c:" + enc(building.id) + ":" + enc(course.id);
+    if (game.scene === "hall" && building) return "#sel=b:" + enc(building.id);
+    return "";
+  }
   $("mode-build").addEventListener("click", () => {
     try { localStorage.setItem(MODE_KEY, "build"); } catch (e) { /* не страшно */ }
-    location.href = "studio.html";
+    location.href = "studio.html" + studioAddress();
   });
   const sheetMenu = $("menu"), sheetTree = $("tree");
 
@@ -1503,8 +1514,11 @@
     elMode.hidden = !!GUEST || titleShown;
     $("mode-play").classList.toggle("on", PLAY);
     $("mode-build").classList.toggle("on", !PLAY);
+    // «Комната» — это открытая карточка над стендом, человек по-прежнему в разделе:
+    // без этого табличка показывала «Вестибюль» при открытой карточке.
+    const inSection = corridor || game.scene === "room";
     elWhere.innerHTML =
-      corridor ? esc(secTitle()) + "<small>" + esc(secSub()) + "</small>"
+      inSection ? esc(secTitle()) + "<small>" + esc(secSub()) + "</small>"
       : game.scene === "street" ? esc(ACADEMY.title || "Академия") + "<small>" + esc(ACADEMY.place || "") + "</small>"
       : game.scene === "hall" ? esc(building ? building.label : "Корпус") + "<small>" + esc(ACADEMY.title || "") + "</small>"
       : "Вестибюль<small>" + esc(course ? course.label : "") + "</small>";
@@ -1553,12 +1567,43 @@
     mark("enter", 0);
     game.fadeDir = -1;
     syncChrome();
-    // Прямой адрес из мастерской: #go=<раздел>/<стенд> — сразу к этому месту.
-    const m = /(?:^|[#&])go=([^/&]+)(?:\/([^&]+))?/.exec(location.hash || "");
-    if (m) {
-      const where = findDoor(decodeURIComponent(m[1]));
-      if (where && where.d.open) setTimeout(() => jumpToCorridor(where.b, where.c, where.d, m[2] ? decodeURIComponent(m[2]) : ""), 250);
+    const m = /(?:^|[#&])go=([^&]*)/.exec(location.hash || "");
+    if (m && m[1]) setTimeout(() => goToAddress(m[1]), 250);
+  }
+
+  /* Переход по адресу из мастерской. Формы:
+       <раздел>            вход в коридор раздела
+       <раздел>/<стенд>    к стенду, с открытой карточкой
+       c:<корпус>:<курс>   вестибюль курса
+       b:<корпус>          вестибюль корпуса
+     Закрытый для слушателей раздел в режиме игры не открывается: человек
+     попадает в вестибюль курса и ему сказано почему. */
+  function goToAddress(spec) {
+    if (!spec) return;
+    if (spec.indexOf("b:") === 0) {
+      const b = BUILDINGS.find((x) => x.id === decodeURIComponent(spec.slice(2)));
+      if (!b) return;
+      if (!b.open && !AUTHOR()) { toast("Корпус закрыт для слушателей"); return; }
+      jumpToHall(b); return;
     }
+    if (spec.indexOf("c:") === 0) {
+      const parts = spec.slice(2).split(":");
+      const b = BUILDINGS.find((x) => x.id === decodeURIComponent(parts[0] || ""));
+      const c = b && (b.courses || []).find((x) => x.id === decodeURIComponent(parts[1] || ""));
+      if (!b || !c) return;
+      if (!c.open && !AUTHOR()) { toast("Курс закрыт для слушателей"); return; }
+      jumpToHub(b, c); return;
+    }
+    const parts = spec.split("/");
+    const where = findDoor(decodeURIComponent(parts[0]));
+    if (!where) return;
+    const stand = parts[1] ? decodeURIComponent(parts[1]) : "";
+    if (!where.d.open) {
+      jumpToHub(where.b, where.c);
+      setTimeout(() => toast("Раздел «" + (where.d.label || "") + "» закрыт для слушателей"), 800);
+      return;
+    }
+    jumpToCorridor(where.b, where.c, where.d, stand);
   }
   $("start").addEventListener("click", startGame);
 
@@ -2313,6 +2358,8 @@
     })));
     setLevel("street");
     syncChrome();
+    // Пришли по адресу из мастерской — титульный экран не держим, переход сразу.
+    if (/(?:^|[#&])go=[^&]/.test(location.hash || "")) startGame();
     requestAnimationFrame(frame);
   })();
 })();

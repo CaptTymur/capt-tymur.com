@@ -92,10 +92,34 @@
     const tr = await M.storeGet(M.KEY_TRASH);
     S.trash = (tr && Array.isArray(tr.items)) ? tr.items : [];
     if (!S.expanded.size) S.buildings.forEach((b) => { S.expanded.add("b:" + b.id); b.courses.forEach((c) => S.expanded.add("c:" + c.id)); });
-    // куда смотреть при входе: что было выбрано в прошлый раз
-    try { const last = JSON.parse(localStorage.getItem("skipi-studio/sel") || "null"); if (last && validSel(last)) S.sel = last; } catch (e) { /* пусто */ }
+    // Куда смотреть при входе: место, переданное павильоном адресом #sel=…,
+    // иначе то, что было выбрано в прошлый раз.
+    const fromPavilion = selFromAddress();
+    if (fromPavilion) S.sel = fromPavilion;
+    else { try { const last = JSON.parse(localStorage.getItem("skipi-studio/sel") || "null"); if (last && validSel(last)) S.sel = last; } catch (e) { /* пусто */ } }
+    if (S.sel.type === "stand" || S.sel.type === "section") {
+      const w = findDoor(S.sel.sec);
+      if (w) { S.expanded.add("b:" + w.b.id); S.expanded.add("c:" + w.c.id); if (S.sel.type === "stand") S.expanded.add("s:" + S.sel.sec); }
+    }
     setStatus("готово " + nowTime());
     renderAll();
+  }
+  // Обратный адрес из павильона: #sel=<раздел>[/<стенд>] | c:<корпус>:<курс> | b:<корпус>
+  function selFromAddress() {
+    const m = /(?:^|[#&])sel=([^&]*)/.exec(location.hash || "");
+    if (!m || !m[1]) return null;
+    const spec = m[1];
+    let sel = null;
+    if (spec.indexOf("b:") === 0) sel = { type: "building", b: decodeURIComponent(spec.slice(2)) };
+    else if (spec.indexOf("c:") === 0) {
+      const p = spec.slice(2).split(":");
+      sel = { type: "course", b: decodeURIComponent(p[0] || ""), c: decodeURIComponent(p[1] || "") };
+    } else {
+      const p = spec.split("/");
+      sel = p[1] ? { type: "stand", sec: decodeURIComponent(p[0]), stand: decodeURIComponent(p[1]) }
+                 : { type: "section", sec: decodeURIComponent(p[0]) };
+    }
+    return validSel(sel) ? sel : null;
   }
   function validSel(sel) {
     if (!sel || !sel.type) return false;
@@ -1181,9 +1205,21 @@
   $("q").addEventListener("input", () => { S.q = $("q").value.trim().toLowerCase(); renderTree(); });
   $("q").addEventListener("keydown", (e) => { if (e.key === "Escape") { $("q").value = ""; S.q = ""; renderTree(); } });
   function setBuildMode() { try { localStorage.setItem("skipi-edu/mode", "build"); } catch (e) { /* пусто */ } }
+
+  /* Адрес выбранного в дереве для павильона. Слово владельца 26.10: переключаясь
+     в игру, человек должен оказаться там, где стоит курсор, а не на улице. */
+  function playAddress(sel) {
+    const enc = encodeURIComponent;
+    if (!sel) return "";
+    if (sel.type === "stand") return "#go=" + enc(sel.sec) + "/" + enc(sel.stand);
+    if (sel.type === "section") return "#go=" + enc(sel.sec);
+    if (sel.type === "course") return "#go=c:" + enc(sel.b) + ":" + enc(sel.c);
+    if (sel.type === "building") return "#go=b:" + enc(sel.b);
+    return "";
+  }
   $("mode-play").addEventListener("click", () => {
     try { localStorage.setItem("skipi-edu/mode", "play"); } catch (e) { /* пусто */ }
-    location.href = "index.html";
+    location.href = "index.html" + playAddress(S.sel);
   });
   $("btn-pav").addEventListener("click", setBuildMode);
   setBuildMode();

@@ -370,6 +370,8 @@
     setTimeout(() => { const f = document.querySelector("#insp [data-f=short]"); if (f) { f.focus(); f.select(); } }, 50);
   }
   $("btn-add-building").addEventListener("click", newBuilding);
+  // «Вставить картинку» в панели: кладёт в то, что сейчас выбрано в дереве.
+  $("btn-paste").addEventListener("click", () => pasteFromClipboard((srcs) => absorbImages(S.sel, srcs)));
 
   /* ═══ инспектор ═══════════════════════════════════════════════════════ */
   function field(label, value, opts) {
@@ -729,9 +731,43 @@
     await absorbImages(S.sel, srcs);
   });
 
+  /* Прямое чтение буфера по нажатию кнопки. Нужно потому, что Ctrl+V доходит
+     до страницы не всегда: если перед этим открылся системный диалог выбора
+     файла, нажатие уходит в него, и человек видит «не вставляется». */
+  async function pasteFromClipboard(onSrcs) {
+    if (!navigator.clipboard || !navigator.clipboard.read) { toast("Этот браузер не отдаёт буфер по кнопке — нажмите Ctrl+V"); return; }
+    let items;
+    try { items = await navigator.clipboard.read(); }
+    catch (e) { toast("Браузер не дал прочитать буфер: разрешите доступ в адресной строке или нажмите Ctrl+V"); return; }
+    const srcs = [];
+    for (const it of items) {
+      const type = (it.types || []).find((t) => /^image\//.test(t));
+      if (!type) continue;
+      try {
+        const blob = await it.getType(type);
+        const src = await ingestImage(new File([blob], "clip." + type.split("/")[1], { type }));
+        if (src) srcs.push(src);
+      } catch (e) { /* этот кусок буфера не читается — идём дальше */ }
+    }
+    if (!srcs.length) { toast("В буфере обмена нет картинки"); return; }
+    await onSrcs(srcs);
+  }
+
+  /* Зона приёма картинок. Нажатие по фону НЕ открывает диалог файла: раньше
+     открывало, и системное окно перехватывало следующий Ctrl+V. Диалог теперь
+     только по явной кнопке. Сам фон принимает фокус, чтобы вставка с клавиатуры
+     попадала в страницу. */
   function dropZone(onSrcs, text) {
-    const z = el("div", "drop", text || "Перетащите картинку сюда, нажмите, чтобы выбрать файл, или вставьте из буфера");
-    z.addEventListener("click", () => { imgSink = onSrcs; $("file-img").click(); });
+    const base = text || "Перетащите сюда картинку — или возьмите её из буфера кнопкой ниже";
+    const z = el("div", "drop");
+    z.tabIndex = 0;
+    const cap = el("div", "drop-t", base);
+    const bar = el("div", "drop-bar");
+    bar.appendChild(btn("вставить из буфера", "sm add", () => pasteFromClipboard(onSrcs)));
+    bar.appendChild(btn("выбрать файлы…", "sm", () => { imgSink = onSrcs; $("file-img").click(); }));
+    z.appendChild(cap); z.appendChild(bar);
+    z.addEventListener("focus", () => { cap.textContent = "Можно нажать Ctrl+V — картинка из буфера ляжет сюда"; });
+    z.addEventListener("blur", () => { cap.textContent = base; });
     z.addEventListener("dragover", (e) => { e.preventDefault(); z.classList.add("over"); });
     z.addEventListener("dragleave", () => z.classList.remove("over"));
     z.addEventListener("drop", async (e) => {
@@ -747,9 +783,12 @@
     if (s.image) {
       const z = el("div", "drop");
       const im = el("img"); im.src = s.image; z.appendChild(im);
-      z.appendChild(btn("заменить", "sm", () => { imgSink = (srcs) => { s.image = srcs[0]; save(); renderInspector(); }; $("file-img").click(); }));
-      z.appendChild(document.createTextNode(" "));
-      z.appendChild(btn("убрать", "sm warn", () => { s.image = null; s.caption = ""; save(); renderInspector(); }));
+      const put = (srcs) => { s.image = srcs[0]; save(); renderInspector(); };
+      const bar = el("div", "drop-bar");
+      bar.appendChild(btn("вставить из буфера", "sm add", () => pasteFromClipboard(put)));
+      bar.appendChild(btn("заменить файлом…", "sm", () => { imgSink = put; $("file-img").click(); }));
+      bar.appendChild(btn("убрать", "sm warn", () => { s.image = null; s.caption = ""; save(); renderInspector(); }));
+      z.appendChild(bar);
       w.appendChild(z);
       w.appendChild(field("Подпись под изображением", s.caption, { on: (v) => { s.caption = v; save(); } }));
     } else w.appendChild(dropZone((srcs) => { s.image = srcs[0]; srcs.slice(1).forEach((x) => s.images.push({ src: x, caption: "" })); save(); renderInspector(); }));

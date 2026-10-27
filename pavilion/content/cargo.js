@@ -9,9 +9,30 @@
    ────────────────────────────────────────────────────────────────────────── */
 
 window.SKIPI_PAVILION = {
-  id: "cargo",
-  title: "Раздел 1",
-  subtitle: "Грузовой офицер: балкер / сухогруз",
-
-  stands: []
+  "id": "cargo",
+  "title": "Раздел 1",
+  "subtitle": "Грузовой офицер: балкер / сухогруз",
+  "stands": [
+    {
+      "id": "smvmlljq066u",
+      "short": "Химия",
+      "icon": "book",
+      "accent": "#f0a830",
+      "title": "Новый стенд",
+      "custom": true
+    },
+    {
+      "id": "smvmmcs13wmg",
+      "short": "Инвентарь",
+      "icon": "book",
+      "accent": "#2aa0a0",
+      "title": "Новый стенд",
+      "body": [
+        "- Зачистка",
+        "- Замывка",
+        "- Покраска"
+      ],
+      "custom": true
+    }
+  ]
 };

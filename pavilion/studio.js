@@ -202,7 +202,17 @@
   }
   async function saveTrash() { await M.storeSet(M.KEY_TRASH, { version: 1, savedAt: new Date().toISOString(), items: S.trash }); }
   const timers = {};
-  function later(key, fn) { clearTimeout(timers[key]); setStatus("правка…", true); timers[key] = setTimeout(fn, 350); }
+  let activeLocalSaves = 0;
+  function later(key, fn) {
+    clearTimeout(timers[key]); setStatus("правка…", true);
+    timers[key] = setTimeout(async () => {
+      delete timers[key]; activeLocalSaves++;
+      try { await fn(); } finally { activeLocalSaves--; }
+    }, 350);
+  }
+  window.addEventListener("beforeunload", (event) => {
+    if (Object.keys(timers).length || activeLocalSaves) { event.preventDefault(); event.returnValue = ""; }
+  });
 
   /* ═══ выбор ═══════════════════════════════════════════════════════════ */
   function select(sel) {

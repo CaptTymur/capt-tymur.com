@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="stylesheet" href="feedback.css">
 <title>Skipi Education — павильон «Коммуникация»</title>
 <meta name="robots" content="noindex, nofollow, noarchive">
 <meta name="referrer" content="no-referrer">
@@ -306,6 +307,7 @@
           <button class="seg" id="mode-play" title="Павильон как его видит слушатель">игра</button>
         </div>
         <button class="tool" id="btn-tree" hidden>дерево</button>
+        <button class="tool" id="btn-feedback" hidden>Вопросы по курсу</button>
         <a class="tool" id="btn-account" href="account.html" hidden>личный кабинет</a>
         <button class="tool" id="btn-menu" hidden>стенды</button>
         <button class="tool add" id="btn-add" hidden>+ стенд</button>
@@ -358,6 +360,7 @@
     <div class="card-foot">
       <span class="draft" id="card-draft" hidden>черновик содержания</span>
       <div class="grp">
+        <button class="btn ghost sm" id="card-feedback" hidden>Вопрос / отзыв по стенду</button>
         <button class="btn ghost sm" id="card-edit">Править стенд</button>
         <button class="btn ghost" id="card-next">Дальше&nbsp;→</button>
       </div>
@@ -489,6 +492,15 @@
   </div>
 </div>
 
+<dialog id="feedback-panel" aria-labelledby="feedback-title">
+  <div class="feedback-head"><h2 id="feedback-title">Вопросы и обратная связь</h2><button type="button" id="feedback-close" aria-label="Закрыть вопросы">×</button></div>
+  <p id="feedback-context" class="feedback-muted"></p>
+  <form id="feedback-form"><label>Что хотите отправить?<select id="feedback-kind"><option value="question">Вопрос</option><option value="feedback">Отзыв / предложение</option></select></label>
+    <label>Ваше сообщение<textarea id="feedback-text" rows="5" maxlength="6000" required placeholder="Напишите вопрос или поделитесь обратной связью"></textarea></label>
+    <button type="submit" id="feedback-send">Отправить преподавателю</button><p id="feedback-status" class="feedback-status" role="status"></p>
+  </form>
+  <h3>Мои обращения по курсу</h3><p class="feedback-muted">Ваши сообщения и ответы преподавателя видны только вам и преподавателю.</p><button type="button" id="feedback-refresh">Обновить ответы</button><div id="feedback-history"></div>
+</dialog>
 <input type="file" id="file-img" accept="image/*" hidden>
 <input type="file" id="file-json" accept="application/json,.json" hidden>
 
@@ -499,6 +511,7 @@
 <script src="model.js"></script>
 <script src="content/sync-config.js"></script>
 <script src="sync.js"></script>
+<script src="feedback.js"></script>
 <script src="game-bootstrap.js"></script>
 </body>
 </html>

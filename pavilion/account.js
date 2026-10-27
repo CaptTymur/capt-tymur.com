@@ -10,6 +10,39 @@
     return data;
   }
   const gameLink = (student, target) => "index.html?g=" + encodeURIComponent(student.id) + "#go=" + target;
+  function artifactList(course) {
+    const section = document.createElement("section"); section.className = "course-artifacts";
+    const heading = document.createElement("h3"); heading.textContent = "Артефакты курса"; section.appendChild(heading);
+    let count = 0;
+    for (const item of course.modules) for (const file of item.artifacts || []) {
+      const row = document.createElement("div"); row.className = "artifact"; row.dataset.fileId = file.fileId || "";
+      const text = document.createElement("div"), title = document.createElement("strong"), moduleName = document.createElement("div");
+      title.textContent = file.label || file.name || "Артефакт"; moduleName.className = "note"; moduleName.textContent = item.label;
+      text.append(title, moduleName); row.appendChild(text);
+      const status = document.createElement("p"); status.className = "note"; status.setAttribute("role", "status");
+      if (file.fileId) {
+        const button = document.createElement("button"); button.type = "button"; button.className = "quiet"; button.textContent = "Скачать";
+        button.addEventListener("click", async () => {
+          if (button.disabled) return; button.disabled = true; status.textContent = "Загружаю файл…";
+          try {
+            const record = await request("/file/" + encodeURIComponent(file.fileId));
+            const bytes = Uint8Array.from(atob(record.base64), (c) => c.charCodeAt(0));
+            const url = URL.createObjectURL(new Blob([bytes], { type: record.type })), link = document.createElement("a");
+            link.href = url; link.download = record.name || file.name || "артефакт"; document.body.appendChild(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 20000);
+            status.textContent = "Файл передан для скачивания";
+          } catch (error) { status.textContent = error.status === 401 ? "Войдите в кабинет заново." : error.status === 403 ? "Доступ к файлу закрыт преподавателем. Обновите кабинет." : "Не удалось скачать. Проверьте связь и повторите."; }
+          finally { button.disabled = false; }
+        }); row.appendChild(button);
+      } else {
+        const target = new URL(file.file, location.href), files = new URL("content/files/", location.href);
+        if (target.origin !== files.origin || !target.pathname.startsWith(files.pathname)) continue;
+        const link = document.createElement("a"); link.className = "button quiet"; link.href = target.href; link.download = file.name || ""; link.textContent = "Скачать"; row.appendChild(link);
+      }
+      row.appendChild(status); section.appendChild(row); count++;
+    }
+    if (!count) { const note = document.createElement("p"); note.className = "note"; note.textContent = "Здесь появятся файлы с последних стендов открытых модулей."; section.appendChild(note); }
+    return section;
+  }
   function render(data) {
     $("login-panel").hidden = true; $("cabinet").hidden = false; $("logout").hidden = false; $("who").hidden = false;
     $("who").textContent = data.student.name; $("welcome").textContent = "Здравствуйте, " + data.student.name;
@@ -35,7 +68,7 @@
         else { const text = document.createElement("p"); text.className = "note"; text.textContent = "Откроет преподаватель"; item.appendChild(text); }
         modules.appendChild(item);
       });
-      card.appendChild(modules); $("courses").appendChild(card);
+      card.appendChild(modules); card.appendChild(artifactList(course)); $("courses").appendChild(card);
     }
   }
   async function load() {

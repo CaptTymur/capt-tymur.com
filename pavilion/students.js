@@ -165,4 +165,5 @@
   });
   $("workspace").hidden = false; $("export").hidden = false;
   selected = Object.keys(guests)[0] || ""; render(); publicationStatus();
+  window.SKIPI_TEACHER_FEEDBACK?.start();
 })().catch((error) => { document.getElementById("status").textContent = "Не удалось открыть кабинет: " + error.message; });

@@ -395,7 +395,7 @@
   // «Комната» открывается только над стендом, поэтому мир в ней — коридор:
   // иначе зажим координаты по ширине вестибюля сдвигал человечка влево от стенда.
   const worldWidth = () => (game.scene === "corridor" || game.scene === "room" ? CORRIDOR_W : HUB_W);
-  const uiOpen = () => !!document.querySelector(".sheet.on");
+  const uiOpen = () => !!document.querySelector(".sheet.on, #feedback-panel[open]");
 
   function go(scene, atX) {
     game.fadeDir = 1;
@@ -685,6 +685,7 @@
     $("card-draft").hidden = !s.draft;
     const next = stands[s.index + 1];
     $("card-next").textContent = next ? "К стенду «" + next.short + "» →" : "К выходу →";
+    $("card-feedback").hidden = !GUEST || !window.SKIPI_CURRENT_STUDENT;
     $("card-edit").hidden = !AUTHOR();          // студенту правка недоступна
     sheetCard.querySelector(".card").style.borderTopColor = s.accent;
     enterRoom();
@@ -829,6 +830,7 @@
 
   function openFinal() {
     currentStand = null;
+    $("card-feedback").hidden = true;
     const done = stands.filter((s) => seen.has(s.id)).length;
     const all = stands.length > 0 && done === stands.length;
     mark(all ? "done" : "exit", done);
@@ -864,6 +866,19 @@
     game.autoTarget = next ? next.x : EXIT_X;
     game.autoOpen = next ? next.id : null;
   });
+  function openFeedback(stand) {
+    if (!GUEST || !window.SKIPI_CURRENT_STUDENT) return;
+    let targetBuilding = building, targetCourse = course;
+    if (!targetCourse) for (const b of BUILDINGS) {
+      const c = b.courses.find((item) => item.open); if (c) { targetBuilding = b; targetCourse = c; break; }
+    }
+    if (!targetBuilding || !targetCourse) { toast("Сначала выберите доступный курс."); return; }
+    held.left = held.right = false; game.autoTarget = null;
+    window.SKIPI_FEEDBACK?.open({ course: targetBuilding.id + "/" + targetCourse.id, courseLabel: targetCourse.label,
+      ...(stand ? { module: PID, moduleLabel: secTitle(), stand: stand.id, standLabel: stand.title || stand.short } : {}) });
+  }
+  $("btn-feedback").addEventListener("click", () => openFeedback(null));
+  $("card-feedback").addEventListener("click", () => openFeedback(currentStand));
   $("card-edit").addEventListener("click", () => { closeSheet(sheetCard); if (currentStand) openEditor(currentStand); });
 
 
@@ -1547,6 +1562,7 @@
     btnData.hidden = !corridor || !AUTHOR();
     btnTree.hidden = !AUTHOR() || titleShown;
     $("btn-account").hidden = !GUEST || titleShown;
+    $("btn-feedback").hidden = !GUEST || titleShown || !window.SKIPI_CURRENT_STUDENT;
     elMode.hidden = !!GUEST || titleShown;
     $("mode-play").classList.toggle("on", PLAY);
     $("mode-build").classList.toggle("on", !PLAY);

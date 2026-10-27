@@ -226,7 +226,7 @@
   const GUESTS = window.SKIPI_GUESTS || {};
   const GUEST = (() => {
     let key = "";
-    try { key = (new URLSearchParams(location.search).get("g") || "").trim().toLowerCase(); }
+    try { key = (new URLSearchParams(location.search).get("g") || window.SKIPI_CURRENT_STUDENT?.id || "").trim().toLowerCase(); }
     catch (e) { key = ""; }
     if (!key) return null;
     if (!Object.prototype.hasOwnProperty.call(GUESTS, key)) return { id: key, ...MODEL.normalizeGuest({ name: "Доступ закрыт", active: false }) };
@@ -237,7 +237,7 @@
   // без «+ стенд», «данные», правки, перестановки и дерева. Запоминается в браузере.
   const MODE_KEY = "skipi-edu/mode";
   let PLAY = (() => { if (window.SKIPI_FORCE_PLAY) return true; try { return localStorage.getItem(MODE_KEY) === "play"; } catch (e) { return false; } })();
-  const AUTHOR = () => !GUEST && !PLAY;
+  const AUTHOR = () => !GUEST && (window.SKIPI_SYNC_CONFIG?.url ? !!window.SKIPI_SYNC?.teacherAuthenticated : !PLAY);
   let SEEN_KEY = "", SEED_FP = "";
 
   /* Отметка о входе слушателя. Сервера у павильона нет, поэтому страница просто
@@ -507,7 +507,7 @@
     try { localStorage.setItem(MODE_KEY, "play"); } catch (e) { /* не страшно */ }
     syncMode(); syncChrome();
     [sheetEd, sheetData, sheetTree, sheetMenu].forEach((el) => { if (el.classList.contains("on")) closeSheet(el); });
-    toast("Режим игры: павильон как у слушателя");
+    toast(AUTHOR() ? "Режим игры: редактирование преподавателя доступно" : "Режим игры: павильон как у слушателя");
   });
   // Обратный переход: мастерская открывается на том месте, где стоит человечек.
   function studioAddress() {
@@ -685,7 +685,7 @@
     $("card-draft").hidden = !s.draft;
     const next = stands[s.index + 1];
     $("card-next").textContent = next ? "К стенду «" + next.short + "» →" : "К выходу →";
-    $("card-edit").hidden = !AUTHOR();          // слушателю и в игре править нечего
+    $("card-edit").hidden = !AUTHOR();          // студенту правка недоступна
     sheetCard.querySelector(".card").style.borderTopColor = s.accent;
     enterRoom();
     openSheet(sheetCard);
@@ -1008,7 +1008,7 @@
     if (src) { setEdImage(src); toast("Изображение добавлено"); }
   });
   addEventListener("paste", async (e) => {
-    if (!AUTHOR()) return;                      // в игре и у слушателя вставка не правит стенды
+    if (!AUTHOR()) return;                      // только преподаватель может менять стенды
     const items = (e.clipboardData && e.clipboardData.items) || [];
     let file = null;
     for (const it of items) if (it.kind === "file" && /^image\//.test(it.type)) { file = it.getAsFile(); break; }
@@ -1284,6 +1284,60 @@
     return { li, row };
   }
 
+  function treeAction(row, label, title, action) {
+    if (!AUTHOR()) return;
+    const button = document.createElement("button"); button.type = "button"; button.className = "btn ghost sm";
+    button.textContent = label; button.title = title; button.setAttribute("aria-label", title);
+    button.style.cssText = "padding:3px 7px;font-size:11px;flex:0 0 auto";
+    button.addEventListener("click", async (event) => {
+      event.stopPropagation(); button.disabled = true;
+      try { await action(); } catch { toast("Не удалось сохранить структуру. Проверьте нижнюю строку."); }
+      finally { button.disabled = false; }
+    });
+    row.appendChild(button);
+  }
+  async function saveGameStructure() {
+    if (!AUTHOR()) return;
+    const ok = await MODEL.storeSet(MODEL.KEY_ACADEMY, { version: 1, savedAt: new Date().toISOString(), title: ACADEMY.title, place: ACADEMY.place, buildings: MODEL.cloneStructure(BUILDINGS) });
+    if (!ok) throw new Error("local_save_failed");
+    if (["street", "hall", "hub"].includes(game.scene)) setLevel(game.scene);
+    syncChrome(); await buildTree();
+  }
+  async function gameNewModule(b, c, existing) {
+    if (!AUTHOR()) return;
+    const name = existing ? existing.label : prompt("Название нового модуля:");
+    if (!name || !name.trim()) return;
+    const d = existing || { label: name.trim(), open: false };
+    if (!d.pavilion) d.pavilion = MODEL.newId("section-");
+    if (!existing) c.doors.push(d);
+    const section = { id: d.pavilion, title: d.label, subtitle: c.label, stands: [] };
+    PAVS[d.pavilion] = section; LOCAL_ONLY[d.pavilion] = true;
+    if (!await MODEL.storeSet(d.pavilion, { version: 2, title: d.label, subtitle: c.label, seedFingerprint: fingerprint([]), stands: [] })) throw new Error("local_save_failed");
+    await saveGameStructure(); await jumpToCorridor(b, c, d);
+    toast("Модуль создан. Добавьте стенды; доступ слушателю задаётся в кабинете студентов.");
+  }
+  async function gameRenameModule(d) {
+    if (!AUTHOR()) return;
+    const name = prompt("Название модуля:", d.label); if (!name || !name.trim()) return;
+    d.label = name.trim();
+    if (d.pavilion) {
+      const rec = await storeGet(d.pavilion) || { version: 2, stands: (PAVS[d.pavilion] || {}).stands || [], seedFingerprint: fingerprint((PAVS[d.pavilion] || {}).stands || []) };
+      rec.title = d.label;
+      if (!await storeSet(d.pavilion, rec)) throw new Error("local_save_failed");
+      TITLES[d.pavilion] = { title: d.label, subtitle: rec.subtitle || "" };
+      if (PAVS[d.pavilion]) PAVS[d.pavilion].title = d.label;
+      if (PID === d.pavilion) TITLE = d.label;
+    }
+    await saveGameStructure();
+  }
+  function orderActions(row, list, item) {
+    for (const [step, label] of [[-1, "↑"], [1, "↓"]]) treeAction(row, label, step < 0 ? "Переместить выше" : "Переместить ниже", async () => {
+      const from = list.indexOf(item), to = from + step;
+      if (from < 0 || to < 0 || to >= list.length) return;
+      list.splice(to, 0, list.splice(from, 1)[0]); await saveGameStructure();
+    });
+  }
+
   function jumpToHall(b) {
     closeSheet(sheetTree);
     building = b; course = null;
@@ -1310,20 +1364,38 @@
 
   async function buildTree() {
     elTree.innerHTML = "";
+    if (AUTHOR()) {
+      const tools = document.createElement("li"); tools.style.cssText = "display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap";
+      treeAction(tools, "+ корпус", "Добавить учебный корпус", async () => {
+        const name = prompt("Название корпуса:"); if (!name || !name.trim()) return;
+        BUILDINGS.push({ id: MODEL.newId("b"), label: name.trim(), address: "", style: "corpus", open: true, courses: [] }); await saveGameStructure();
+      });
+      elTree.appendChild(tools);
+    }
     let nCourses = 0, nSections = 0, nStands = 0;
     for (const b of BUILDINGS) {
       const rb = treeRow("building", "корпус", b.label, { closed: !b.open, here: building === b && game.scene === "hall" });
-      if (b.open) rb.row.addEventListener("click", () => jumpToHall(b));
+      if (b.open || AUTHOR()) rb.row.addEventListener("click", () => jumpToHall(b));
+      treeAction(rb.row, "+ курс", "Добавить курс в корпус «" + b.label + "»", async () => {
+        const name = prompt("Название курса:"); if (!name || !name.trim()) return;
+        b.courses.push({ id: MODEL.newId("c"), label: name.trim(), sub: "Курс", open: true, doors: [] }); await saveGameStructure();
+      });
+      treeAction(rb.row, "✎", "Переименовать корпус «" + b.label + "»", async () => { const name = prompt("Название корпуса:", b.label); if (name?.trim()) { b.label = name.trim(); await saveGameStructure(); } });
+      orderActions(rb.row, BUILDINGS, b);
       const ulC = document.createElement("ul");
       for (const c of (b.courses || [])) {
         const rc = treeRow("course", c.sub || "курс", c.label, { closed: !c.open, here: course === c && game.scene === "hub" });
-        if (c.open) { nCourses++; rc.row.addEventListener("click", () => jumpToHub(b, c)); }
+        if (c.open || AUTHOR()) { nCourses++; rc.row.addEventListener("click", () => jumpToHub(b, c)); }
+        treeAction(rc.row, "+ модуль", "Добавить модуль в курс «" + c.label + "»", () => gameNewModule(b, c));
+        treeAction(rc.row, "✎", "Переименовать курс «" + c.label + "»", async () => { const name = prompt("Название курса:", c.label); if (name?.trim()) { c.label = name.trim(); await saveGameStructure(); } });
+        orderActions(rc.row, b.courses, c);
         const ulS = document.createElement("ul");
         for (const d of (c.doors || [])) {
           const id = d.pavilion || "";
           const name = (id && TITLES[id] && TITLES[id].title) || d.label;
           const open = !!d.open && !!id && (!!PAVS[id] || !!LOCAL_ONLY[id]);
-          const got = open ? await standsOf(id) : { list: [], local: false };
+          const browse = open || (AUTHOR() && !!id && (!!PAVS[id] || !!LOCAL_ONLY[id]));
+          const got = browse ? await standsOf(id) : { list: [], local: false };
           const seenSet = open ? (id === PID ? seen : seenSetFor(id)) : new Set();
           const done = got.list.filter((s) => seenSet.has(s.id)).length;
           const rs = treeRow("pavilion", "раздел", name, {
@@ -1331,7 +1403,13 @@
             here: id === PID && (game.scene === "corridor" || game.scene === "room"),
             marks: open ? (got.list.length ? "стендов " + got.list.length + ", пройдено " + done : "пусто") : "закрыт"
           });
-          if (open) { nSections++; nStands += got.list.length; rs.row.addEventListener("click", () => jumpToCorridor(b, c, d)); }
+          if (browse) { nSections++; nStands += got.list.length; rs.row.addEventListener("click", () => jumpToCorridor(b, c, d)); }
+          if (!id) treeAction(rs.row, "создать", "Создать модуль «" + d.label + "»", () => gameNewModule(b, c, d));
+          else treeAction(rs.row, "+ стенд", "Добавить стенд в модуль «" + d.label + "»", async () => {
+            await jumpToCorridor(b, c, d); createStand();
+          });
+          treeAction(rs.row, "✎", "Переименовать модуль «" + d.label + "»", () => gameRenameModule(d));
+          orderActions(rs.row, c.doors, d);
           const ulSt = document.createElement("ul");
           got.list.forEach((s, i) => {
             const li = document.createElement("li");
@@ -1468,6 +1546,7 @@
     btnAdd.hidden = !(corridor || hubTeach) || !AUTHOR();
     btnData.hidden = !corridor || !AUTHOR();
     btnTree.hidden = !AUTHOR() || titleShown;
+    $("btn-account").hidden = !GUEST || titleShown;
     elMode.hidden = !!GUEST || titleShown;
     $("mode-play").classList.toggle("on", PLAY);
     $("mode-build").classList.toggle("on", !PLAY);
@@ -1555,7 +1634,7 @@
     const where = findDoor(decodeURIComponent(parts[0]));
     if (!where) return;
     const stand = parts[1] ? decodeURIComponent(parts[1]) : "";
-    if (!where.d.open) {
+    if (!where.d.open && !AUTHOR()) {
       jumpToHub(where.b, where.c);
       setTimeout(() => toast("Раздел «" + (where.d.label || "") + "» закрыт для слушателей"), 800);
       return;
@@ -2305,6 +2384,7 @@
     LINKS = rawLinks.map(MODEL.normalizeLink).filter(Boolean);
     const ids = [];
     BUILDINGS.forEach((b) => (b.courses || []).forEach((c) => (c.doors || []).forEach((d) => {
+      if (GUEST && !d.open) return;
       if (d.pavilion && ids.indexOf(d.pavilion) < 0) ids.push(d.pavilion);
     })));
     await loadPavilions(ids);

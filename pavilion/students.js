@@ -5,7 +5,10 @@
   const M = window.SKIPI_MODEL, $ = (id) => document.getElementById(id);
   if (window.SKIPI_SYNC) await window.SKIPI_SYNC.start({ editor: true });
   const published = window.SKIPI_GUESTS || {}, guests = {};
-  let selected = "", buildings = [], dirty = false;
+  let selected = "", buildings = [], dirty = false, credentialsBusy = false, accountInfo = {};
+  if (window.SKIPI_SYNC?.enabled) {
+    try { accountInfo = (await window.SKIPI_SYNC.request("/students")).students; } catch { /* старый сервис: настройки доступа продолжают работать */ }
+  }
   const status = (message) => { $("status").textContent = message; };
   const hash = String((window.SKIPI_STUDIO || {}).keyHash || "").trim().toLowerCase();
   const accepted = async (word) => {
@@ -76,23 +79,31 @@
     $("student-title").textContent = g.name; $("name").value = g.name; $("active").checked = g.active;
     $("stripes").value = g.stripes === undefined ? "" : String(g.stripes);
     $("invite").value = link(selected); $("preview").href = link(selected);
+    $("student-login").value = accountInfo[selected]?.username || selected;
+    $("student-password").value = ""; $("issued-password").value = ""; $("credential-result").hidden = true; $("credential-message").textContent = "";
+    $("login-state").textContent = accountInfo[selected]?.passwordConfigured ? "Пароль задан. Повторное назначение завершит прежние входы студента." : "Пароль ещё не задан. Студент войдёт после его назначения.";
     $("access").replaceChildren();
     for (const b of buildings) {
       accessRow(b.label, "building:" + b.id, b.open, false);
       for (const c of b.courses) {
+        const enrollment = document.createElement("label"); enrollment.className = "row";
+        const checkbox = document.createElement("input"); checkbox.type = "checkbox"; checkbox.dataset.course = b.id + "/" + c.id; checkbox.checked = (g.courses || []).includes(checkbox.dataset.course);
+        enrollment.append(checkbox, document.createTextNode("Назначен курс: " + c.label)); $("access").appendChild(enrollment);
         accessRow(c.label, "course:" + b.id + "/" + c.id, c.open, false);
         for (const d of c.doors) if (d.pavilion) accessRow(d.label, "section:" + d.pavilion, d.open, true);
+        else { const planned = document.createElement("div"); planned.className = "access section"; planned.textContent = d.label + " · модуль ещё не создан"; $("access").appendChild(planned); }
       }
     }
     publicationStatus();
   }
-  $("student-form").addEventListener("input", () => { dirty = true; });
-  $("student-form").addEventListener("change", () => { dirty = true; });
+  $("student-form").addEventListener("input", (event) => { if (!event.target.closest("#login-settings")) dirty = true; });
+  $("student-form").addEventListener("change", (event) => { if (!event.target.closest("#login-settings")) dirty = true; });
   $("student-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     const g = guests[selected], name = $("name").value.trim();
     if (!name) return;
     const next = { ...g, name, active: $("active").checked, access: { ...g.access } };
+    next.courses = [...document.querySelectorAll("[data-course]:checked")].map((input) => input.dataset.course);
     if ($("stripes").value) next.stripes = Number($("stripes").value); else delete next.stripes;
     for (const input of document.querySelectorAll("[data-access]")) {
       if (!input.value) delete next.access[input.dataset.access];
@@ -111,7 +122,7 @@
     const name = $("new-name").value.trim(); if (!name) return;
     if (dirty && !confirm("Отменить несохранённые правки?")) return;
     const key = "student-" + crypto.randomUUID().slice(0, 12);
-    guests[key] = M.normalizeGuest({ name, role: "cadet", note: "Персональный вход слушателя" });
+    guests[key] = M.normalizeGuest({ name, role: "cadet", courses: [], note: "Персональный вход слушателя" });
     try { await save(); selected = key; $("new-name").value = ""; render(); }
     catch (error) { delete guests[key]; status(error.message); }
   });
@@ -124,6 +135,31 @@
     status(window.SKIPI_SYNC?.enabled ? "Резервная выгрузка готова. Настройки сохраняются автоматически." : "Выгрузка готова. Передайте файл разработчику для публикации; у студентов пока действуют прежние настройки.");
   });
   window.addEventListener("beforeunload", (event) => { if (dirty) { event.preventDefault(); event.returnValue = ""; } });
+  async function setPassword(generated) {
+    if (credentialsBusy) return;
+    if (dirty) { $("credential-message").textContent = "Сначала сохраните настройки студента."; return; }
+    if (!window.SKIPI_SYNC?.enabled) { $("credential-message").textContent = "Подключите общее хранилище, чтобы задать пароль."; return; }
+    if (!generated && $("student-password").value.length < 8) { $("credential-message").textContent = "Пароль должен содержать не менее 8 символов."; return; }
+    credentialsBusy = true; $("set-password").disabled = true; $("generate-password").disabled = true;
+    $("issued-password").value = ""; $("credential-result").hidden = true;
+    const id = selected;
+    try {
+      await window.SKIPI_SYNC.flush();
+      const body = { id, username: $("student-login").value.trim() };
+      if (!generated) body.password = $("student-password").value;
+      const answer = await window.SKIPI_SYNC.request("/students/password", body);
+      accountInfo[id] = { username: answer.username, passwordConfigured: true };
+      if (selected !== id) return;
+      $("student-password").value = ""; $("login-state").textContent = "Пароль задан. Прежние входы студента завершены.";
+      $("credential-message").textContent = "Логин: " + answer.username + ". Передайте студенту ссылку на личный кабинет и пароль.";
+      if (answer.generatedPassword) { $("issued-password").value = answer.generatedPassword; $("issued-password").type = "password"; $("credential-result").hidden = false; }
+    } catch (error) { $("credential-message").textContent = error.message === "username_taken" ? "Этот логин уже занят." : "Не удалось задать пароль. Проверьте сохранение студента, логин и связь."; }
+    finally { credentialsBusy = false; $("set-password").disabled = false; $("generate-password").disabled = false; }
+  }
+  $("set-password").addEventListener("click", () => setPassword(false));
+  $("generate-password").addEventListener("click", () => setPassword(true));
+  $("show-password").addEventListener("click", () => { $("issued-password").type = $("issued-password").type === "password" ? "text" : "password"; });
+  $("copy-password").addEventListener("click", async () => { try { await navigator.clipboard.writeText($("issued-password").value); $("credential-message").textContent = "Пароль скопирован."; } catch { $("issued-password").type = "text"; $("issued-password").select(); } });
   window.addEventListener("skipi-sync-saved", (event) => {
     if (event.detail.changes.__guests) { Object.keys(published).forEach((key) => delete published[key]); Object.assign(published, event.detail.changes.__guests.guests); renderList(); publicationStatus(); }
   });

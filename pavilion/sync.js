@@ -5,7 +5,7 @@
   const M = window.SKIPI_MODEL, config = window.SKIPI_SYNC_CONFIG || {};
   const url = String(config.url || "").replace(/\/$/, "");
   const META = "skipi-sync/state", KEY = "skipi-studio/key";
-  const S = { enabled: false, revision: 0, pending: new Map(), busy: false, blocked: false, editor: false };
+  const S = { enabled: false, revision: 0, pending: new Map(), busy: false, blocked: false, editor: false, teacherAuthenticated: false };
   let token = "", timer = 0, bar, status, retry;
   const remember = () => localStorage.setItem(META, JSON.stringify({ revision: S.revision, dirty: S.pending.size > 0 || S.busy }));
   function message(text) { if (status) status.textContent = text; }
@@ -18,7 +18,7 @@
     document.body.style.paddingBottom = "42px";
   }
   async function request(path, body) {
-    const response = await fetch(url + path, { method: body ? "POST" : "GET", cache: "no-store",
+    const response = await fetch(url + path, { method: body ? "POST" : "GET", cache: "no-store", credentials: "include",
       headers: { ...(token ? { Authorization: "Bearer " + token } : {}), ...(body ? { "Content-Type": "application/json" } : {}) },
       ...(body ? { body: JSON.stringify(body) } : {}), signal: AbortSignal.timeout(30000) });
     const data = await response.json();
@@ -157,12 +157,13 @@
         banner();
         while (true) {
           if (!await login()) { message("Общее хранилище не подключено. Правки остаются в этом браузере."); return false; }
-          try { await request("/session"); break; }
+          try { await request("/session"); S.teacherAuthenticated = true; break; }
           catch (error) { if (error.status !== 401) throw error; localStorage.removeItem(KEY); token = ""; message("Неверный ключ преподавателя. Введите его ещё раз."); }
         }
       }
-      else token = localStorage.getItem(KEY) || "";
+      else token = "";
       let state = await request("/state"); S.revision = state.revision;
+      window.SKIPI_CURRENT_STUDENT = state.student || null;
       if (editor) {
         const local = await localRecords(), meta = JSON.parse(localStorage.getItem(META) || "null");
         if (Object.keys(local).length && (!meta || meta.dirty)) {
@@ -186,12 +187,13 @@
       }
       globals(state.records); S.enabled = true; return true;
     } catch (error) {
+      if (!editor && error.status === 401) { window.SKIPI_LOGIN_REQUIRED = true; return false; }
       if (!status) banner();
       message("Общее хранилище недоступно. Работаю с копией в этом браузере: " + error.message);
       return false;
     }
   }
-  window.SKIPI_SYNC = { start, flush, get enabled() { return S.enabled; }, get revision() { return S.revision; },
+  window.SKIPI_SYNC = { start, flush, request, get enabled() { return S.enabled; }, get revision() { return S.revision; }, get teacherAuthenticated() { return S.teacherAuthenticated; },
     async getFile(id) {
       if (!S.enabled) return null;
       const record = await request("/file/" + encodeURIComponent(id));

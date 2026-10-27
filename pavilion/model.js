@@ -248,6 +248,7 @@
     return {
       name: String(g.name || "Слушатель"), role: g.role === "captain" ? "captain" : "cadet",
       note: String(g.note || ""), active: g.active !== false, access,
+      ...(Array.isArray(g.courses) ? { courses: [...new Set(g.courses.filter((key) => typeof key === "string" && /^[a-zA-Z0-9_-]+\/[a-zA-Z0-9_-]+$/.test(key)))] } : {}),
       ...(Number.isInteger(g.stripes) && g.stripes >= 1 && g.stripes <= 4 ? { stripes: g.stripes } : {})
     };
   }
@@ -260,12 +261,15 @@
       const bk = "building:" + b.id;
       for (const c of b.courses) {
         const ck = "course:" + b.id + "/" + c.id;
+        const enrolled = !Array.isArray(g.courses) || g.courses.includes(b.id + "/" + c.id);
+        if (Array.isArray(g.courses) && enrolled) { c.open = true; if (a[bk] !== false) b.open = true; }
         for (const d of c.doors) {
           const dk = "section:" + d.pavilion;
           d.open = allowed(dk, d.open);
           if (a[dk] === true && a[ck] !== false) c.open = true;
         }
         c.open = allowed(ck, c.open);
+        if (!enrolled) c.open = false;
         if ((a[ck] === true || c.doors.some((d) => a["section:" + d.pavilion] === true)) && c.open && a[bk] !== false) b.open = true;
       }
       b.open = g.active && allowed(bk, b.open);
@@ -273,8 +277,9 @@
         c.open = b.open && c.open;
         for (const d of c.doors) d.open = c.open && d.open;
       }
+      if (Array.isArray(g.courses)) b.courses = b.courses.filter((c) => g.courses.includes(b.id + "/" + c.id));
     }
-    return out;
+    return Array.isArray(g.courses) ? out.filter((b) => b.courses.length) : out;
   }
 
   /* ─── связи ──────────────────────────────────────────────────────────── */

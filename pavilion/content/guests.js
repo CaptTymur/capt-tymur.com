@@ -12,6 +12,7 @@ window.SKIPI_GUESTS = {
     "role": "cadet",
     "note": "Персональный вход слушателя",
     "active": true,
+    "courses": ["b1/captain"],
     "access": {
       "section:commercial": true
     },

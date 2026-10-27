@@ -36,7 +36,14 @@
     <div class="row"><label><input id="active" type="checkbox"> Вход разрешён</label><label>Полоски на рукаве <select id="stripes"><option value="">По форме</option><option>1</option><option>2</option><option>3</option><option>4</option></select></label></div>
     <label class="field">Ссылка слушателя<input id="invite" readonly></label>
     <div class="row"><button type="button" id="copy">Копировать ссылку</button><a id="preview" target="_blank" rel="noopener">Открыть опубликованный вход</a></div>
-    <h2>Курсы и разделы</h2><p>«Как в академии» сохраняет общее правило. Можно отдельно открыть или закрыть курс и каждый опубликованный раздел. Закрытие курса закрывает все его разделы.</p>
+    <fieldset id="login-settings"><legend>Вход по паролю</legend><p id="login-state"></p>
+      <label class="field">Логин<input id="student-login" autocomplete="off" maxlength="64"></label>
+      <label class="field">Новый пароль<input id="student-password" type="password" autocomplete="new-password" maxlength="256"></label>
+      <div class="row"><button type="button" id="set-password">Задать пароль</button><button type="button" id="generate-password">Создать случайный пароль</button></div>
+      <div id="credential-result" hidden><label class="field">Новый пароль — сохраните перед закрытием<input id="issued-password" type="password" readonly></label><div class="row"><button type="button" id="show-password">Показать</button><button type="button" id="copy-password">Копировать пароль</button></div></div>
+      <p id="credential-message" role="status"></p>
+    </fieldset>
+    <h2>Назначенные курсы и модули</h2><p>Студент видит только назначенные курсы. Внутри курса ему показаны все модули и отдельно отмечены открытые. Закрытие курса закрывает все его модули.</p>
     <div id="access"></div>
     <div class="row"><button type="submit">Сохранить изменения</button><button type="button" id="reset">Отменить правки</button></div>
   </form></article>

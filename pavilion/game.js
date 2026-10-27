@@ -179,43 +179,12 @@
   }
   const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 
-  /* ═══ хранилище: IndexedDB, запасной путь — localStorage ══════════════ */
-  const DB_NAME = "skipi-education", STORE = "pavilions";
-  let dbp = null;
-  function db() {
-    if (dbp) return dbp;
-    dbp = new Promise((res, rej) => {
-      if (!window.indexedDB) return rej(new Error("no idb"));
-      const r = indexedDB.open(DB_NAME, 1);
-      r.onupgradeneeded = () => { if (!r.result.objectStoreNames.contains(STORE)) r.result.createObjectStore(STORE); };
-      r.onsuccess = () => res(r.result);
-      r.onerror = () => rej(r.error);
-    });
-    return dbp;
-  }
-  async function storeGet(key) {
-    try {
-      const d = await db();
-      return await new Promise((res, rej) => {
-        const t = d.transaction(STORE, "readonly").objectStore(STORE).get(key);
-        t.onsuccess = () => res(t.result); t.onerror = () => rej(t.error);
-      });
-    } catch (e) {
-      try { const raw = localStorage.getItem(DB_NAME + "/" + key); return raw ? JSON.parse(raw) : undefined; }
-      catch (e2) { return undefined; }
-    }
-  }
-  async function storeSet(key, val) {
-    try {
-      const d = await db();
-      return await new Promise((res, rej) => {
-        const t = d.transaction(STORE, "readwrite").objectStore(STORE).put(val, key);
-        t.onsuccess = () => res(true); t.onerror = () => rej(t.error);
-      });
-    } catch (e) {
-      try { localStorage.setItem(DB_NAME + "/" + key, JSON.stringify(val)); return true; }
-      catch (e2) { toast("Не удалось сохранить: в браузере кончилось место"); return false; }
-    }
+  /* Общее хранилище с мастерской: при подключении серверная версия приоритетна. */
+  const storeGet = MODEL.storeGet;
+  async function storeSet(key, value, notify = true) {
+    const ok = await MODEL.storeSet(key, value, notify);
+    if (!ok) toast("Не удалось сохранить: в браузере кончилось место");
+    return ok;
   }
 
   /* ═══ модель ══════════════════════════════════════════════════════════ */
@@ -267,7 +236,7 @@
   // Переключатель «наполнение / игра». В игре павильон чист, как у слушателя:
   // без «+ стенд», «данные», правки, перестановки и дерева. Запоминается в браузере.
   const MODE_KEY = "skipi-edu/mode";
-  let PLAY = (() => { try { return localStorage.getItem(MODE_KEY) === "play"; } catch (e) { return false; } })();
+  let PLAY = (() => { if (window.SKIPI_FORCE_PLAY) return true; try { return localStorage.getItem(MODE_KEY) === "play"; } catch (e) { return false; } })();
   const AUTHOR = () => !GUEST && !PLAY;
   let SEEN_KEY = "", SEED_FP = "";
 
@@ -320,13 +289,13 @@
     syncChrome();
   }
 
-  async function save() {
+  async function save(localOnly = false) {
     const plain = stands.map(MODEL.plainStand);
     await storeSet(PID, {
       version: 2, savedAt: new Date().toISOString(),
       seedFingerprint: SEED_FP, stands: plain,
       title: TITLE, subtitle: SUBTITLE
-    });
+    }, !localOnly);
   }
   function markSeen(id) {
     seen.add(id);
@@ -814,13 +783,19 @@
       const kind = ((d.name || d.file || "файл").split(".").pop() || "файл").toUpperCase().slice(0, 5);
       const row = document.createElement(d.hold || pending ? "div" : "a");
       row.className = "dl" + (d.hold ? " held" : "");
-      if (pending) {
+      if (pending && !d.hold) {
         row.classList.add("held");
         MODEL.getFile(d.fileId).then((rec) => {
-          if (!rec || !rec.blob) return;                 // чужой браузер: файла нет, строка остаётся
+          if (!rec || !rec.blob) {
+            const why = row.querySelector(".why");
+            if (why && !d.hold && window.SKIPI_SYNC?.enabled) why.textContent = "Файл пока недоступен. Обновите страницу после сохранения.";
+            return;
+          }
           row.classList.remove("held");
           row.style.cursor = "pointer";
-          const why = row.querySelector(".why"); if (why) why.textContent = "ещё не опубликован, но у вас он есть";
+          const why = row.querySelector(".why");
+          if (why) why.textContent = d.hold ? "закрыт для слушателей" : rec.remote ? "из общего хранилища"
+            : window.SKIPI_SYNC?.enabled ? "файл доступен; статус сохранения — в нижней строке" : "ещё не опубликован, но у вас он есть";
           const arrow = row.querySelector(".arrow"); if (arrow) arrow.textContent = "↓";
           row.addEventListener("click", () => {
             const u = URL.createObjectURL(rec.blob);
@@ -842,7 +817,7 @@
       if (d.hold || pending) {
         const why = document.createElement("span");
         why.className = "why";
-        why.textContent = d.hold ? (d.holdWhy || "файл пока не выложен") : "будет доступен после публикации";
+        why.textContent = d.hold ? (d.holdWhy || "файл пока не выложен") : window.SKIPI_SYNC?.enabled ? "получаю файл из общего хранилища…" : "будет доступен после публикации";
         txt.appendChild(why);
       }
       const a = document.createElement("span");
@@ -2303,7 +2278,7 @@
       }
     }
     stands = list.map(normalize);
-    await save();
+    await save(true);
     relayout();
     if (replaced) {
       setTimeout(() => toast("Содержание обновлено автором курса. Ваш прежний набор сохранён в резерве"), 900);

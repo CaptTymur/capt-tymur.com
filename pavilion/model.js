@@ -54,17 +54,17 @@
       catch (e2) { return undefined; }
     }
   }
-  async function storeSet(key, val) {
+  async function storeSet(key, val, notify = true) {
     try {
       const d = await db();
       const ok = await new Promise((res, rej) => {
         const t = d.transaction(STORE, "readwrite").objectStore(STORE).put(val, key);
         t.onsuccess = () => res(true); t.onerror = () => rej(t.error);
       });
-      if (ok) changed(key, val);
+      if (ok && notify) changed(key, val);
       return ok;
     } catch (e) {
-      try { localStorage.setItem(DB_NAME + "/" + key, JSON.stringify(val)); changed(key, val); return true; }
+      try { localStorage.setItem(DB_NAME + "/" + key, JSON.stringify(val)); if (notify) changed(key, val); return true; }
       catch (e2) { return false; }
     }
   }

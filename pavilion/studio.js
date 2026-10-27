@@ -737,7 +737,8 @@
     for (const f of fileList) {
       if (f.size > MAX_FILE) { toast("«" + f.name + "» больше 90 МБ — столько не публикуется"); continue; }
       if (f.size > WARN_FILE && !confirm("«" + f.name + "» весит " + M.niceSize(f.size)
-        + ". Такой файл уедет в репозиторий и останется в его истории навсегда. Загрузить?")) continue;
+        + (window.SKIPI_SYNC?.enabled ? ". Файл будет автоматически загружен в общее хранилище. Загрузить?"
+          : ". Такой файл уедет в репозиторий и останется в его истории навсегда. Загрузить?"))) continue;
       const rec = await M.putFile(f);
       if (!rec) { toast("Не удалось сохранить «" + f.name + "»: в браузере кончилось место"); continue; }
       stand.downloads.push({ label: rec.name.replace(/\.[^.]+$/, ""), file: "", fileId: rec.id,
@@ -757,7 +758,7 @@
       lab.addEventListener("input", () => { d.label = lab.value; save(); });
       r.appendChild(lab);
       const state = el("span", "fstate");
-      state.textContent = d.file ? "опубликован" : (d.fileId ? M.niceSize(d.size || 0) + " · в браузере" : "нет файла");
+      state.textContent = d.file ? "опубликован" : (d.fileId ? M.niceSize(d.size || 0) + (window.SKIPI_SYNC?.enabled ? " · автосохранение" : " · в браузере") : "нет файла");
       if (!d.file && d.fileId) state.classList.add("local");
       r.appendChild(state);
       r.appendChild(check("не выкладывать", d.hold, (v) => { d.hold = v; save(); renderInspector(); }));
@@ -774,7 +775,9 @@
       const del = el("button", "x", "×");
       del.addEventListener("click", async () => {
         if (!confirm("Убрать «" + (d.label || d.name) + "» со стенда?" + (d.fileId ? " Загруженный файл будет удалён из браузера." : ""))) return;
-        if (d.fileId) await M.delFile(d.fileId);
+        const shared = d.fileId && Object.values(S.sections).some((section) => section.stands.some((stand) =>
+          (stand.downloads || []).some((other) => other !== d && other.fileId === d.fileId)));
+        if (d.fileId && !shared) await M.delFile(d.fileId);
         s.downloads.splice(i, 1); await save(); renderInspector();
       });
       r.appendChild(del);
@@ -804,8 +807,10 @@
     w.appendChild(z);
     const note = el("div", "hint");
     note.style.marginTop = "6px";
-    note.textContent = "Загруженный файл уедет в публикацию и станет доступен по прямой ссылке всякому, кто её знает: "
-      + "репозиторий сайта публичный. Для чужих материалов ставьте «не выкладывать» — запись останется, файл наружу не уйдёт.";
+    note.textContent = window.SKIPI_SYNC?.enabled
+      ? "Файлы сохраняются автоматически в общем хранилище. Подтверждение отправки — в нижней строке. «Не выкладывать» закрывает выдачу файла слушателям."
+      : "Загруженный файл уедет в публикацию и станет доступен по прямой ссылке всякому, кто её знает: "
+        + "репозиторий сайта публичный. Для чужих материалов ставьте «не выкладывать» — запись останется, файл наружу не уйдёт.";
     w.appendChild(note);
     return w;
   }

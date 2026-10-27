@@ -196,7 +196,7 @@
       if (!S.enabled) return null;
       const record = await request("/file/" + encodeURIComponent(id));
       const bytes = Uint8Array.from(atob(record.base64), (c) => c.charCodeAt(0));
-      return { ...record, blob: new Blob([bytes], { type: record.type }) };
+      return { ...record, remote: true, blob: new Blob([bytes], { type: record.type }) };
     }
   };
 })();

@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow,noarchive">
+<meta name="referrer" content="no-referrer">
+<title>Skipi Education — управление студентами</title>
+<style>
+  *{box-sizing:border-box} [hidden]{display:none!important}
+  body{margin:0;background:#c0c0c0;color:#000;font:13px Tahoma,"Segoe UI",sans-serif}
+  header{padding:5px 9px;color:white;background:linear-gradient(90deg,#000080,#1084d0);font-weight:bold}
+  nav{display:flex;gap:16px;flex-wrap:wrap;padding:9px} a{color:#000080}
+  button,input,select{font:inherit} button{padding:5px 12px;background:#c0c0c0;color:#000;border:2px outset #eee;cursor:pointer}
+  input,select{padding:5px;border:2px inset #eee;max-width:100%} input[type=checkbox]{width:17px;height:17px}
+  main{display:grid;grid-template-columns:280px minmax(0,1fr);gap:6px;padding:6px;min-height:75vh}
+  aside,article{background:white;border:2px inset #eee;padding:12px;min-width:0}
+  h1{font-size:18px;margin-top:0} h2{font-size:15px} p{line-height:1.5}
+  #list{display:grid;gap:5px;margin-top:12px} #list button{text-align:left} #list button[aria-pressed=true]{background:#000080;color:white}
+  label.field{display:grid;gap:4px;margin-bottom:12px} .row{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin:10px 0}
+  .access{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:7px 0;border-bottom:1px solid #ddd}
+  .section{padding-left:24px} .status{padding:10px;border:2px inset #eee;margin:6px;line-height:1.5}
+  .notice{color:#800000} #gate{position:fixed;inset:0;background:#c0c0c0;display:grid;place-items:center} #gate form{background:white;padding:24px;max-width:90vw;border:2px outset #eee}
+  @media(max-width:650px){main{grid-template-columns:1fr} aside{min-height:auto}.access{flex-wrap:wrap}.section{padding-left:12px}}
+</style>
+</head>
+<body>
+<header>Управление студентами — Skipi Education</header>
+<nav><a href="studio.html">Наполнение курсов</a><strong>Студенты и доступ</strong><a href="index.html">Павильон</a></nav>
+<div id="gate" hidden><form id="gate-form"><h1>Ключ преподавателя</h1><label class="field">Ключ<input id="gate-key" type="password" autocomplete="current-password" required></label><button>Войти</button><p id="gate-error" role="alert"></p></form></div>
+<main id="workspace" hidden>
+  <aside><h1>Студенты</h1><form id="add-form"><label class="field">Имя нового студента<input id="new-name" required maxlength="120"></label><button>Добавить</button></form><div id="list"></div></aside>
+  <article><div id="empty">Выберите студента слева.</div><form id="student-form" hidden>
+    <h1 id="student-title"></h1>
+    <label class="field">Имя<input id="name" required maxlength="120"></label>
+    <div class="row"><label><input id="active" type="checkbox"> Вход разрешён</label><label>Полоски на рукаве <select id="stripes"><option value="">По форме</option><option>1</option><option>2</option><option>3</option><option>4</option></select></label></div>
+    <label class="field">Ссылка слушателя<input id="invite" readonly></label>
+    <div class="row"><button type="button" id="copy">Копировать ссылку</button><a id="preview" target="_blank" rel="noopener">Открыть опубликованный вход</a></div>
+    <h2>Курсы и разделы</h2><p>«Как в академии» сохраняет общее правило. Можно отдельно открыть или закрыть курс и каждый опубликованный раздел. Закрытие курса закрывает все его разделы.</p>
+    <div id="access"></div>
+    <div class="row"><button type="submit">Сохранить изменения</button><button type="button" id="reset">Отменить правки</button></div>
+  </form></article>
+</main>
+<div class="status"><div id="status" role="status">Загрузка…</div><div id="key-warning" class="notice"></div></div>
+<nav><button id="export" hidden>Выгрузить изменения для публикации</button></nav>
+<script src="content/academy.js"></script><script src="content/guests.js"></script><script src="content/studio-key.js"></script><script src="model.js"></script><script src="students.js"></script>
+</body>
+</html>

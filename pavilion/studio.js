@@ -125,10 +125,11 @@
     const fileG = window.SKIPI_GUESTS || {};
     const savedG = await M.storeGet("__guests");
     S.guests = {};
-    for (const [k, v] of Object.entries(fileG)) S.guests[k] = { name: v.name || k, role: v.role || "cadet", note: v.note || "", local: false };
+    for (const [k, v] of Object.entries(fileG)) S.guests[k] = { ...M.normalizeGuest(v), local: false };
     if (savedG && savedG.guests) for (const [k, v] of Object.entries(savedG.guests)) {
       const was = S.guests[k];
-      S.guests[k] = { name: v.name || k, role: v.role || "cadet", note: v.note || "", local: !was || was.name !== v.name };
+      const guest = M.normalizeGuest(v, was);
+      S.guests[k] = { ...guest, local: !was || JSON.stringify(M.normalizeGuest(was)) !== JSON.stringify(guest) };
     }
     const tr = await M.storeGet(M.KEY_TRASH);
     S.trash = (tr && Array.isArray(tr.items)) ? tr.items : [];
@@ -195,7 +196,7 @@
   }
   async function saveGuests() {
     const out = {};
-    for (const [k, v] of Object.entries(S.guests)) out[k] = { name: v.name, role: v.role, note: v.note };
+    for (const [k, v] of Object.entries(S.guests)) out[k] = M.normalizeGuest(v);
     await M.storeSet("__guests", { version: 1, savedAt: new Date().toISOString(), guests: out });
   }
   async function saveTrash() { await M.storeSet(M.KEY_TRASH, { version: 1, savedAt: new Date().toISOString(), items: S.trash }); }
@@ -1275,14 +1276,14 @@
       const g = S.guests[k];
       const r = el("div", "trow");
       r.appendChild(el("span", "t", g.name));
-      r.appendChild(el("span", "m", g.local ? "только в браузере" : "опубликован"));
+      r.appendChild(el("span", "m", (g.active === false ? "вход закрыт · " : "") + (g.local ? "только в браузере" : "опубликован")));
       r.appendChild(btn("копировать ссылку", "sm", async () => {
         try { await navigator.clipboard.writeText(guestLink(k)); toast("Ссылка скопирована"); }
         catch (e) { prompt("Скопируйте ссылку:", guestLink(k)); }
       }));
-      r.appendChild(btn("убрать", "sm warn", async () => {
-        if (!confirm("Убрать слушателя «" + g.name + "»? Его ссылка перестанет работать после следующей публикации.")) return;
-        delete S.guests[k]; await saveGuests(); buildGuests();
+      r.appendChild(btn("отозвать вход", "sm warn", async () => {
+        if (!confirm("Закрыть вход слушателю «" + g.name + "»? Его ссылка перестанет работать после следующей публикации.")) return;
+        S.guests[k].active = false; S.guests[k].local = true; await saveGuests(); buildGuests();
       }));
       list.appendChild(r);
     });
@@ -1335,7 +1336,7 @@
       heavy += rec.size;
     }
     download("skipi-academy-" + today() + ".json", { format: "skipi-academy", version: 1, exportedAt: new Date().toISOString(), academy: { title: FILE_ACADEMY.title, place: FILE_ACADEMY.place, buildings: M.cloneStructure(S.buildings) }, sections, links: S.links,
-      guests: Object.fromEntries(Object.entries(S.guests).map(([k, v]) => [k, { name: v.name, role: v.role, note: v.note }])), files });
+      guests: Object.fromEntries(Object.entries(S.guests).map(([k, v]) => [k, M.normalizeGuest(v)])), files });
     toast(Object.keys(files).length ? "Выгружено, файлов внутри " + Object.keys(files).length + " (" + M.niceSize(heavy) + ")" : "Файл академии выгружен");
   }
   function exportSection(id) {

@@ -258,9 +258,9 @@
     let key = "";
     try { key = (new URLSearchParams(location.search).get("g") || "").trim().toLowerCase(); }
     catch (e) { key = ""; }
-    if (!key || !Object.prototype.hasOwnProperty.call(GUESTS, key)) return null;
-    const g = GUESTS[key] || {};
-    return { id: key, name: g.name || key, role: g.role === "captain" ? "captain" : "cadet", note: g.note || "" };
+    if (!key) return null;
+    if (!Object.prototype.hasOwnProperty.call(GUESTS, key)) return { id: key, ...MODEL.normalizeGuest({ name: "Доступ закрыт", active: false }) };
+    return { id: key, ...MODEL.normalizeGuest(GUESTS[key]) };
   })();
   const SUIT = GUEST ? GUEST.role : "captain";
   // Переключатель «наполнение / игра». В игре павильон чист, как у слушателя:
@@ -2037,7 +2037,7 @@
 
   /* ═══ человечек ═══════════════════════════════════════════════════════
      Два вида: капитан (чёрный китель, погоны, четыре нашивки) и слушатель
-     (синий китель, одна нашивка, без погон). Кто именно — решает ссылка. */
+     (синий китель, без погон). Число нашивок можно задать персонально. */
   const SUITS = {
     captain: {
       jkt: "#1b2130", jktS: "#11161f", rim: "#38465e", tie: "#0a0d12",
@@ -2100,13 +2100,14 @@
       px(x - 15, Y(47), 7, 1, P.gold);   px(x + 8, Y(47), 7, 1, P.gold);
     }
 
-    // руки, на обшлагах четыре нашивки
+    // руки, число нашивок из персональной записи или из вида формы
+    const stripeCount = GUEST && GUEST.stripes || S.stripes;
     [0, 1].forEach((i) => {
       const off = Math.round(-sw[i] * dir * 0.6);
       const ax = i === 0 ? x - 21 : x + 13;
       px(ax, Y(45) + off, 8, 24, P.out);
       px(ax + 1, Y(44) + off, 6, 22, i === 0 ? S.jkt : S.jktS);
-      for (let k = 0; k < S.stripes; k++) px(ax + 1, Y(31 - k * 3) + off, 6, 2, P.gold);
+      for (let k = 0; k < stripeCount; k++) px(ax + 1, Y(25 + (stripeCount - 1 - k) * 3) + off, 6, 2, P.gold);
       px(ax + 1, Y(22) + off, 6, 4, P.skin);
     });
 
@@ -2310,10 +2311,19 @@
 
   /* ═══ пуск ════════════════════════════════════════════════════════════ */
   (async () => {
+    if (GUEST && !GUEST.active) {
+      $("start").disabled = true;
+      $("start").textContent = "Доступ закрыт";
+      const note = document.querySelector("#title .title-note");
+      if (note) note.textContent = "Эта ссылка недействительна. Обратитесь к преподавателю.";
+      syncChrome();
+      return;
+    }
     // Структура, заданная методистом в мастерской этого браузера, перекрывает файл;
     // то, что появилось в файле позже, к ней добавляется.
     const ovA = await storeGet(MODEL.KEY_ACADEMY);
     if (ovA && Array.isArray(ovA.buildings)) BUILDINGS = MODEL.mergeStructure(ACADEMY.buildings || [], ovA.buildings).buildings;
+    BUILDINGS = MODEL.guestBuildings(BUILDINGS, GUEST);
     const ovL = await storeGet(MODEL.KEY_LINKS);
     const rawLinks = (ovL && Array.isArray(ovL.links)) ? ovL.links : (((window.SKIPI_LINKS || {}).links) || []);
     LINKS = rawLinks.map(MODEL.normalizeLink).filter(Boolean);

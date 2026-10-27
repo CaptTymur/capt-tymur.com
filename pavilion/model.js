@@ -222,12 +222,52 @@
         let c = b.courses.find((x) => x.id === fc.id);
         if (!c) { b.courses.push(fc); added++; continue; }
         for (const fd of fc.doors) {
-          const has = c.doors.some((x) => fd.pavilion ? x.pavilion === fd.pavilion : x.label === fd.label);
-          if (!has) { c.doors.push(fd); added++; }
+          const existing = c.doors.find((x) => fd.pavilion ? x.pavilion === fd.pavilion || (!x.pavilion && x.label === fd.label) : x.label === fd.label);
+          if (!existing) { c.doors.push(fd); added++; }
+          else if (!existing.pavilion && fd.pavilion) { existing.pavilion = fd.pavilion; added++; }
         }
       }
     }
     return { buildings: out, added };
+  }
+
+  // Персональные настройки слушателя сохраняются при выгрузке и в старых браузерах.
+  function normalizeGuest(raw, fallback) {
+    const g = Object.assign({}, fallback || {}, raw || {});
+    const access = {};
+    for (const [key, value] of Object.entries(g.access || {})) {
+      if (/^(building|course|section):/.test(key) && typeof value === "boolean") access[key] = value;
+    }
+    return {
+      name: String(g.name || "Слушатель"), role: g.role === "captain" ? "captain" : "cadet",
+      note: String(g.note || ""), active: g.active !== false, access,
+      ...(Number.isInteger(g.stripes) && g.stripes >= 1 && g.stripes <= 4 ? { stripes: g.stripes } : {})
+    };
+  }
+  function guestBuildings(buildings, guest) {
+    const out = cloneStructure(buildings);
+    if (!guest) return out;
+    const g = normalizeGuest(guest), a = g.access;
+    const allowed = (key, value) => Object.hasOwn(a, key) ? a[key] : value;
+    for (const b of out) {
+      const bk = "building:" + b.id;
+      for (const c of b.courses) {
+        const ck = "course:" + b.id + "/" + c.id;
+        for (const d of c.doors) {
+          const dk = "section:" + d.pavilion;
+          d.open = allowed(dk, d.open);
+          if (a[dk] === true && a[ck] !== false) c.open = true;
+        }
+        c.open = allowed(ck, c.open);
+        if ((a[ck] === true || c.doors.some((d) => a["section:" + d.pavilion] === true)) && c.open && a[bk] !== false) b.open = true;
+      }
+      b.open = g.active && allowed(bk, b.open);
+      for (const c of b.courses) {
+        c.open = b.open && c.open;
+        for (const d of c.doors) d.open = c.open && d.open;
+      }
+    }
+    return out;
   }
 
   /* ─── связи ──────────────────────────────────────────────────────────── */
@@ -255,7 +295,7 @@
     storeGet, storeSet, storeDel, storeKeys,
     putFile, getFile, delFile, listFiles, blobToBase64, niceSize,
     fingerprint, ACCENTS, ICONS, ICON_NAMES, newId, normalizeStand, plainStand,
-    cloneStructure, mergeStructure,
+    cloneStructure, mergeStructure, normalizeGuest, guestBuildings,
     LINK_KINDS, nodeKey, normalizeLink
   };
 })();

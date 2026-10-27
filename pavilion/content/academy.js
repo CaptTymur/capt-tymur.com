@@ -32,7 +32,7 @@ window.SKIPI_ACADEMY = {
           doors: [
             { label: "Вступление",                       open: true,  pavilion: "intro" },
             { label: "Коммуникация",                     open: true,  pavilion: "communication" },
-            { label: "Коммерческий менеджмент",          open: false },
+            { label: "Коммерческий менеджмент",          open: false, pavilion: "commercial" },
             { label: "Технический менеджмент",           open: false },
             { label: "Администрирование судна",          open: false },
             { label: "Оценка рисков и принятие решений", open: false },

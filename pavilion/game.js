@@ -244,6 +244,7 @@
   }
   async function loadPavilions(ids) {
     for (const id of ids) {
+      if (window.SKIPI_REMOTE_SECTIONS?.[id]) { PAVS[id] = window.SKIPI_REMOTE_SECTIONS[id]; continue; }
       try { delete window.SKIPI_PAVILION; } catch (e) { window.SKIPI_PAVILION = undefined; }
       const ok = await loadScript("content/" + id + ".js");
       const p = window.SKIPI_PAVILION;

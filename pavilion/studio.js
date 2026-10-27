@@ -21,7 +21,7 @@
   function setStatus(txt, busy) { const s = $("status"); s.textContent = txt; s.classList.toggle("busy", !!busy); }
 
   /* ═══ состояние ═══════════════════════════════════════════════════════ */
-  const FILE_ACADEMY = window.SKIPI_ACADEMY || { title: "Академия", buildings: [] };
+  let FILE_ACADEMY = window.SKIPI_ACADEMY || { title: "Академия", buildings: [] };
   const S = {
     buildings: [],            // структура (см. model.cloneStructure)
     sections: {},             // id → {id, title, subtitle, stands[], hasFile, fileFp, fileStands[], fileTitle}
@@ -84,8 +84,9 @@
   /* ═══ загрузка ════════════════════════════════════════════════════════ */
   async function loadSection(id, door) {
     try { delete window.SKIPI_PAVILION; } catch (e) { window.SKIPI_PAVILION = undefined; }
-    const ok = await loadScript("content/" + id + ".js");
-    const p = (ok && window.SKIPI_PAVILION && Array.isArray(window.SKIPI_PAVILION.stands)) ? window.SKIPI_PAVILION : null;
+    const remote = window.SKIPI_REMOTE_SECTIONS?.[id];
+    const ok = remote || await loadScript("content/" + id + ".js");
+    const p = remote || ((ok && window.SKIPI_PAVILION && Array.isArray(window.SKIPI_PAVILION.stands)) ? window.SKIPI_PAVILION : null);
     const fileRaw = p ? p.stands : [];
     const sec = {
       id, hasFile: !!p, fileFp: M.fingerprint(fileRaw), fileRaw,
@@ -176,8 +177,8 @@
   /* ═══ сохранение ══════════════════════════════════════════════════════ */
   async function saveStructure() {
     setStatus("сохраняю…", true);
-    await M.storeSet(M.KEY_ACADEMY, { version: 1, savedAt: new Date().toISOString(), buildings: M.cloneStructure(S.buildings) });
-    setStatus("сохранено " + nowTime());
+    const ok = await M.storeSet(M.KEY_ACADEMY, { version: 1, savedAt: new Date().toISOString(), buildings: M.cloneStructure(S.buildings) });
+    setStatus(ok ? "сохранено в браузере " + nowTime() : "НЕ СОХРАНЕНО: нет места", !ok);
   }
   async function saveSection(id) {
     const sec = S.sections[id]; if (!sec) return;
@@ -186,13 +187,13 @@
       version: 2, savedAt: new Date().toISOString(), seedFingerprint: sec.fileFp,
       stands: sec.stands.map(M.plainStand), title: sec.title, subtitle: sec.subtitle
     });
-    setStatus(ok ? "сохранено " + nowTime() : "НЕ СОХРАНЕНО: нет места", !ok);
+    setStatus(ok ? "сохранено в браузере " + nowTime() : "НЕ СОХРАНЕНО: нет места", !ok);
     if (!ok) toast("Не удалось сохранить: в браузере кончилось место");
   }
   async function saveLinks() {
     setStatus("сохраняю…", true);
-    await M.storeSet(M.KEY_LINKS, { version: 1, savedAt: new Date().toISOString(), links: S.links });
-    setStatus("сохранено " + nowTime());
+    const ok = await M.storeSet(M.KEY_LINKS, { version: 1, savedAt: new Date().toISOString(), links: S.links });
+    setStatus(ok ? "сохранено в браузере " + nowTime() : "НЕ СОХРАНЕНО: нет места", !ok);
   }
   async function saveGuests() {
     const out = {};
@@ -1313,6 +1314,12 @@
   $("gs-x").addEventListener("click", () => closeSheet($("sh-guests")));
   $("gs-done").addEventListener("click", () => closeSheet($("sh-guests")));
   $("sh-guests").addEventListener("pointerdown", (e) => { if (e.target === $("sh-guests")) closeSheet($("sh-guests")); });
+  window.addEventListener("skipi-sync-saved", (event) => {
+    const guests = event.detail.changes.__guests?.guests;
+    if (!guests) return;
+    for (const [key, value] of Object.entries(guests)) if (S.guests[key] && JSON.stringify(M.normalizeGuest(S.guests[key])) === JSON.stringify(M.normalizeGuest(value))) S.guests[key].local = false;
+    if ($("sh-guests").classList.contains("on")) buildGuests();
+  });
 
   /* ═══ данные ══════════════════════════════════════════════════════════ */
   function download(name, obj) {
@@ -1441,9 +1448,11 @@
   $("btn-pav").addEventListener("click", setBuildMode);
   setBuildMode();
 
-  function start() {
+  async function start() {
     const cell = document.querySelector(".statusbar .cell:nth-child(3)");
     if (cell && !KEY_HASH) { cell.textContent = "Мастерская открыта всем — ключ не задан"; cell.style.color = "#800000"; }
+    if (window.SKIPI_SYNC) await window.SKIPI_SYNC.start({ editor: true });
+    FILE_ACADEMY = window.SKIPI_ACADEMY || FILE_ACADEMY;
     load().catch((e) => { setStatus("ошибка загрузки"); console.error(e); toast("Не удалось загрузить: " + e.message); });
   }
   passGate().then((ok) => { if (ok) start(); else showGate(); });

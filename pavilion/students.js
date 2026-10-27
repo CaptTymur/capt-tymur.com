@@ -3,6 +3,7 @@
 (async () => {
   "use strict";
   const M = window.SKIPI_MODEL, $ = (id) => document.getElementById(id);
+  if (window.SKIPI_SYNC) await window.SKIPI_SYNC.start({ editor: true });
   const published = window.SKIPI_GUESTS || {}, guests = {};
   let selected = "", buildings = [], dirty = false;
   const status = (message) => { $("status").textContent = message; };
@@ -35,6 +36,7 @@
     : M.cloneStructure(window.SKIPI_ACADEMY.buildings);
   const changed = (key) => !published[key] || JSON.stringify(guests[key]) !== JSON.stringify(M.normalizeGuest(published[key]));
   const publicationStatus = () => {
+    if (window.SKIPI_SYNC?.enabled) { status("Настройки сохраняются автоматически в общем хранилище. Подтверждение отправки — в нижней строке."); return; }
     const count = Object.keys(guests).filter(changed).length;
     status(count ? "Сохранено в этом браузере. Студентов с неопубликованными изменениями: " + count + ". Выгрузите изменения и передайте файл для публикации — до этого ссылки и права у студентов прежние."
       : "Все сохранённые настройки студентов опубликованы.");
@@ -119,9 +121,12 @@
     const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }));
     const a = document.createElement("a"); a.href = url; a.download = "skipi-students-" + new Date().toISOString().slice(0, 10) + ".json";
     a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
-    status("Выгрузка готова. Передайте файл разработчику для публикации; у студентов пока действуют прежние настройки.");
+    status(window.SKIPI_SYNC?.enabled ? "Резервная выгрузка готова. Настройки сохраняются автоматически." : "Выгрузка готова. Передайте файл разработчику для публикации; у студентов пока действуют прежние настройки.");
   });
   window.addEventListener("beforeunload", (event) => { if (dirty) { event.preventDefault(); event.returnValue = ""; } });
+  window.addEventListener("skipi-sync-saved", (event) => {
+    if (event.detail.changes.__guests) { Object.keys(published).forEach((key) => delete published[key]); Object.assign(published, event.detail.changes.__guests.guests); renderList(); publicationStatus(); }
+  });
   $("workspace").hidden = false; $("export").hidden = false;
   selected = Object.keys(guests)[0] || ""; render(); publicationStatus();
 })().catch((error) => { document.getElementById("status").textContent = "Не удалось открыть кабинет: " + error.message; });

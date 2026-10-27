@@ -26,7 +26,10 @@
   // Лежат отдельно от стендов, чтобы набор раздела оставался лёгким.
   const FILE_PREFIX = "file:";
 
-  let dbp = null;
+  let dbp = null, writeObserver = null, remoteRecords = null;
+  const setWriteObserver = (fn) => { writeObserver = fn; };
+  const setRemoteRecords = (records) => { remoteRecords = records; };
+  const changed = (key, value) => { if (writeObserver) writeObserver(key, value); };
   function db() {
     if (dbp) return dbp;
     dbp = new Promise((res, rej) => {
@@ -39,6 +42,7 @@
     return dbp;
   }
   async function storeGet(key) {
+    if (remoteRecords && !key.includes("/backup")) return remoteRecords[key];
     try {
       const d = await db();
       return await new Promise((res, rej) => {
@@ -53,24 +57,28 @@
   async function storeSet(key, val) {
     try {
       const d = await db();
-      return await new Promise((res, rej) => {
+      const ok = await new Promise((res, rej) => {
         const t = d.transaction(STORE, "readwrite").objectStore(STORE).put(val, key);
         t.onsuccess = () => res(true); t.onerror = () => rej(t.error);
       });
+      if (ok) changed(key, val);
+      return ok;
     } catch (e) {
-      try { localStorage.setItem(DB_NAME + "/" + key, JSON.stringify(val)); return true; }
+      try { localStorage.setItem(DB_NAME + "/" + key, JSON.stringify(val)); changed(key, val); return true; }
       catch (e2) { return false; }
     }
   }
   async function storeDel(key) {
     try {
       const d = await db();
-      return await new Promise((res, rej) => {
+      const ok = await new Promise((res, rej) => {
         const t = d.transaction(STORE, "readwrite").objectStore(STORE).delete(key);
         t.onsuccess = () => res(true); t.onerror = () => rej(t.error);
       });
+      if (ok) changed(key, null);
+      return ok;
     } catch (e) {
-      try { localStorage.removeItem(DB_NAME + "/" + key); return true; } catch (e2) { return false; }
+      try { localStorage.removeItem(DB_NAME + "/" + key); changed(key, null); return true; } catch (e2) { return false; }
     }
   }
   async function storeKeys() {
@@ -97,7 +105,11 @@
     const ok = await storeSet(FILE_PREFIX + id, rec);
     return ok ? { id, name: rec.name, type: rec.type, size: rec.size } : null;
   }
-  const getFile = (id) => storeGet(FILE_PREFIX + id);
+  const getFile = async (id) => {
+    const local = await storeGet(FILE_PREFIX + id);
+    if (local) return local;
+    try { return await window.SKIPI_SYNC?.getFile(id) || null; } catch { return null; }
+  };
   const delFile = (id) => storeDel(FILE_PREFIX + id);
   async function listFiles() {
     const keys = (await storeKeys()).filter((k) => k.indexOf(FILE_PREFIX) === 0);
@@ -120,12 +132,7 @@
      у себя» от «автор курса выложил новое содержание». Берём то, что меняется
      при смысловой правке: состав и порядок стендов, надписи, слайды, объём текста. */
   function fingerprint(list) {
-    const s = JSON.stringify((list || []).map((x) => [
-      x.id, x.short, x.title, x.image,
-      (x.images || []).map((i) => i.src),
-      (x.body || []).length, (x.points || []).length,
-      (x.downloads || []).map((d) => d.file)
-    ]));
+    const s = JSON.stringify((list || []).map((x) => plainStand(normalizeStand(x))));
     let h = 5381;
     for (let i = 0; i < s.length; i++) h = (((h * 33) ^ s.charCodeAt(i)) >>> 0);
     return h.toString(36) + "." + s.length.toString(36);
@@ -292,7 +299,7 @@
 
   window.SKIPI_MODEL = {
     DB_NAME, STORE, KEY_ACADEMY, KEY_LINKS, KEY_TRASH, FILE_PREFIX,
-    storeGet, storeSet, storeDel, storeKeys,
+    storeGet, storeSet, storeDel, storeKeys, setWriteObserver, setRemoteRecords,
     putFile, getFile, delFile, listFiles, blobToBase64, niceSize,
     fingerprint, ACCENTS, ICONS, ICON_NAMES, newId, normalizeStand, plainStand,
     cloneStructure, mergeStructure, normalizeGuest, guestBuildings,

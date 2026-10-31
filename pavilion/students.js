@@ -66,7 +66,9 @@
     const row = document.createElement("label"); row.className = "access" + (section ? " section" : "");
     const name = document.createElement("span"); name.textContent = label;
     const select = document.createElement("select"); select.dataset.access = key;
-    for (const [value, text] of [["", "Как в академии (" + (open ? "открыто" : "закрыто") + ")"], ["true", "Открыть"], ["false", "Закрыть"]]) {
+    // Модуль по умолчанию закрыт: дверь академии сама доступа слушателю не даёт.
+    const byDefault = section ? "По умолчанию закрыто" : "Как в академии (" + (open ? "открыто" : "закрыто") + ")";
+    for (const [value, text] of [["", byDefault], ["true", "Открыть"], ["false", "Закрыть"]]) {
       const option = document.createElement("option"); option.value = value; option.textContent = text; select.appendChild(option);
     }
     const value = guests[selected].access[key]; select.value = value === undefined ? "" : String(value);

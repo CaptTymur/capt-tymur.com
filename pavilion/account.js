@@ -98,6 +98,45 @@
     try { await request("/student/password", { currentPassword: $("old-password").value, newPassword: $("new-password").value }); $("password-form").reset(); $("password-status").textContent = "Пароль изменён"; }
     catch (error) { $("password-status").textContent = error.status === 401 ? "Текущий пароль неверен" : "Не удалось изменить пароль. Новый пароль должен содержать не менее 8 символов."; }
   });
-  load();
-  window.addEventListener("pageshow", (event) => { if (event.persisted) load(); });
+  /* После оплаты: ?order=…&claim=…&tx=… — покупатель задаёт пароль один раз и сразу входит. */
+  const params = new URLSearchParams(location.search), claimOrder = params.get("order") || "", claimToken = params.get("claim") || "", claimTx = params.get("tx") || "";
+  const claimQuery = () => "/paddle/order?orderId=" + encodeURIComponent(claimOrder) + "&claim=" + encodeURIComponent(claimToken) + (claimTx ? "&transactionId=" + encodeURIComponent(claimTx) : "");
+  function finishClaim() {
+    try { localStorage.removeItem("skipi-edu/order"); } catch { /* приватный режим */ }
+    history.replaceState(null, "", "account.html"); $("claim-panel").hidden = true;
+  }
+  async function claimFlow() {
+    $("login-panel").hidden = true; $("claim-panel").hidden = false;
+    let status = null;
+    for (let attempt = 0; attempt < 40; attempt++) {
+      try { status = await request(claimQuery()); }
+      catch (error) {
+        $("claim-title").textContent = "Заказ не найден"; $("claim-text").textContent = error.status === 404 || error.status === 403 ? "Ссылка оформления недействительна или устарела. Если вы оплатили курс, напишите нам — доступ откроем вручную." : "Нет связи с сервером. Обновите страницу позже: ссылка оформления остаётся действительной.";
+        $("claim-login-link").hidden = false; return;
+      }
+      if (status.status !== "pending") break;
+      $("claim-note").textContent = "Подтверждение ещё не пришло… попытка " + (attempt + 1);
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+    }
+    $("claim-note").textContent = "";
+    if (!status || status.status === "pending") { $("claim-title").textContent = "Оплата ещё не подтверждена"; $("claim-text").textContent = "Paddle пока не подтвердил платёж. Откройте эту же ссылку через несколько минут — она сохранена в браузере на странице покупки."; $("claim-login-link").hidden = false; return; }
+    if (status.status === "refunded") { $("claim-title").textContent = "Платёж возвращён"; $("claim-text").textContent = "По этому заказу оформлен возврат, доступ к курсу закрыт."; $("claim-login-link").hidden = false; return; }
+    if (status.claimed || status.accountReady) { $("claim-title").textContent = "Пароль уже задан"; $("claim-text").textContent = "Войдите с логином " + (status.username || status.email) + " и паролем, который вы придумали."; $("claim-login-link").hidden = false; finishClaimLater(status.username || status.email); return; }
+    $("claim-title").textContent = "Оплата подтверждена"; $("claim-text").textContent = "Курс «" + status.courseLabel + "» оплачен. Придумайте пароль: логин — ваш e-mail.";
+    $("claim-username").value = status.email; $("claim-form").hidden = false;
+  }
+  function finishClaimLater(username) { $("claim-login-link").querySelector("a").addEventListener("click", (event) => { event.preventDefault(); finishClaim(); $("login-panel").hidden = false; $("username").value = username; }); }
+  $("claim-form").addEventListener("submit", async (event) => {
+    event.preventDefault(); if (busy) return;
+    if ($("claim-password").value !== $("claim-confirm").value) { $("claim-error").textContent = "Пароли не совпадают"; return; }
+    busy = true; $("claim-button").disabled = true; $("claim-error").textContent = "";
+    try {
+      await request("/paddle/claim", { orderId: claimOrder, claim: claimToken, username: $("claim-username").value.trim(), password: $("claim-password").value });
+      $("claim-password").value = ""; $("claim-confirm").value = ""; finishClaim(); await load();
+    } catch (error) {
+      $("claim-error").textContent = error.message === "username_taken" ? "Этот логин уже занят, укажите другой." : error.message === "password_length" ? "Пароль должен содержать не менее 8 символов." : error.message === "already_claimed" ? "Пароль уже был задан. Перейдите ко входу." : error.message === "order_not_paid" ? "Оплата ещё не подтверждена. Подождите минуту и повторите." : "Не удалось сохранить пароль. Проверьте связь и повторите.";
+    } finally { busy = false; $("claim-button").disabled = false; }
+  });
+  if (claimOrder && claimToken) claimFlow(); else load();
+  window.addEventListener("pageshow", (event) => { if (event.persisted && !(claimOrder && claimToken)) load(); });
 })();

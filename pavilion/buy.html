@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Курс «Капитан гражданского судна» — Skipi Education</title>
+<style>
+  :root{color-scheme:dark;--bg:#091923;--panel:#102835;--line:#254555;--text:#edf3f6;--muted:#abc0cb;--gold:#e3b457;--green:#94d7b7}
+  *{box-sizing:border-box}[hidden]{display:none!important}body{margin:0;background:var(--bg);color:var(--text);font:16px system-ui,sans-serif;line-height:1.5}
+  header,main{width:min(1080px,100%);margin:auto;padding:24px}header{display:flex;align-items:center;gap:16px;flex-wrap:wrap;border-bottom:1px solid var(--line)}
+  .brand{font-weight:750;letter-spacing:.04em;color:var(--gold);text-decoration:none}.spacer{flex:1}h1{font-size:clamp(26px,4vw,38px);line-height:1.2;margin:8px 0 14px}h2{font-size:20px;margin:0 0 12px}p{color:var(--muted)}
+  button,input{font:inherit}button,.button{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:12px 20px;border:1px solid var(--gold);border-radius:7px;background:var(--gold);color:#17202a;font-weight:650;text-decoration:none;cursor:pointer}
+  .quiet{background:transparent;border-color:var(--line);color:var(--text)}button:disabled{opacity:.55;cursor:default}a{color:var(--gold)}label{display:grid;gap:7px;margin-bottom:18px}input{min-width:0;width:100%;padding:11px;border:1px solid var(--line);border-radius:6px;background:#081a24;color:var(--text)}
+  .eyebrow{font-size:12px;text-transform:uppercase;letter-spacing:.15em;color:var(--gold)}
+  .offer{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(300px,1fr);gap:28px;align-items:start;margin-top:28px}
+  .card{padding:26px;border:1px solid var(--line);border-radius:12px;background:var(--panel)}
+  .price{font-size:40px;font-weight:750;line-height:1;margin:6px 0 4px;color:var(--text)}.price small{font-size:14px;font-weight:400;color:var(--muted)}
+  ol{margin:0;padding-left:22px;color:var(--text)}ol li{padding:5px 0;border-bottom:1px solid var(--line)}ol li:last-child{border:0}ol li small{color:var(--muted)}
+  .badge{display:inline-block;padding:4px 10px;border-radius:999px;border:1px solid #d8a657;color:#ffd98a;font-size:13px;margin-bottom:14px}
+  .error{color:#ffb6a8;min-height:1.4em}.note{font-size:14px}.facts{display:grid;gap:8px;margin:18px 0 22px}.facts div{display:flex;gap:10px;align-items:baseline}.facts b{color:var(--green)}
+  #resume{padding:16px 20px;margin:0 0 18px;border:1px solid var(--green);border-radius:10px;background:#0c2a2a}
+  @media(max-width:760px){.offer{grid-template-columns:1fr}header,main{padding:18px}.card{padding:20px}button[type=submit]{width:100%}}
+</style>
+<script src="https://cdn.paddle.com/paddle/v2/paddle.js"></script>
+</head>
+<body>
+<header><a class="brand" href="index.html">SKIPI EDUCATION</a><span class="spacer"></span><a class="note" href="account.html">Личный кабинет</a></header>
+<main>
+  <div class="eyebrow">Онлайн-курс</div>
+  <h1 id="course-title">Капитан гражданского судна</h1>
+  <p>Курс проходят в интерактивном павильоне: вы идёте по коридору вдоль стендов, читаете справки, смотрите материалы и забираете артефакты модулей. Доступ открывается сразу после оплаты и остаётся в личном кабинете.</p>
+  <div id="resume" hidden><strong>У вас есть незавершённое оформление доступа.</strong><p class="note" id="resume-note"></p><a class="button quiet" id="resume-link" href="account.html">Продолжить оформление доступа</a></div>
+  <div class="offer">
+    <section class="card">
+      <h2>Что внутри</h2>
+      <div class="facts"><div><b id="module-count">9</b><span>модулей курса</span></div><div><b>Кабинет</b><span>личный вход, артефакты и вопросы преподавателю</span></div><div><b>Доступ</b><span>открывается сразу после подтверждения оплаты</span></div></div>
+      <ol id="modules"></ol>
+    </section>
+    <section class="card" id="purchase">
+      <span class="badge" id="sandbox-badge" hidden>Тестовый режим: деньги не списываются</span>
+      <div class="eyebrow">Стоимость</div>
+      <div class="price" id="price">—</div>
+      <p class="note" id="price-note">Налоги и итоговая сумма показываются в окне оплаты.</p>
+      <form id="buy-form">
+        <label>Ваше имя<input id="name" autocomplete="name" required maxlength="120"></label>
+        <label>E-mail<input id="email" type="email" autocomplete="email" required maxlength="254"></label>
+        <p class="note">На этот адрес придёт чек, он же станет логином в личный кабинет.</p>
+        <button type="submit" id="pay">Перейти к оплате</button>
+        <p class="error" id="error" role="alert"></p>
+      </form>
+      <p class="note" id="status" role="status"></p>
+      <p class="note">Платёж принимает Paddle. После оплаты вы придумаете пароль и сразу войдёте в курс.</p>
+    </section>
+  </div>
+</main>
+<script src="content/academy.js"></script><script src="content/sync-config.js"></script><script src="buy.js"></script>
+</body>
+</html>

@@ -5,10 +5,20 @@
   const M = window.SKIPI_MODEL, $ = (id) => document.getElementById(id);
   if (window.SKIPI_SYNC) await window.SKIPI_SYNC.start({ editor: true });
   const published = window.SKIPI_GUESTS || {}, guests = {};
-  let selected = "", buildings = [], dirty = false, credentialsBusy = false, accountInfo = {};
+  let selected = "", buildings = [], dirty = false, credentialsBusy = false, accountInfo = {}, purchased = {};
   if (window.SKIPI_SYNC?.enabled) {
-    try { accountInfo = (await window.SKIPI_SYNC.request("/students")).students; } catch { /* старый сервис: настройки доступа продолжают работать */ }
+    try {
+      const info = await window.SKIPI_SYNC.request("/students"); accountInfo = info.students; purchased = info.purchased || {};
+      // Купившие курс приходят с сервера: истина о покупке — в заказах Paddle, не в этом файле.
+      for (const [key, g] of Object.entries(purchased)) if (!published[key]) published[key] = g;
+    } catch { /* старый сервис: настройки доступа продолжают работать */ }
   }
+  const purchaseLine = (key) => {
+    const p = purchased[key]?.purchase; if (!p) return "";
+    const when = p.paidAt ? new Date(p.paidAt * 1000).toLocaleString("ru") : "";
+    return "Оплачено через Paddle (" + p.environment + ")" + (when ? " " + when : "") + ": заказ " + p.orderId + (p.transactionId ? ", транзакция " + p.transactionId : "") + ", e-mail " + p.email
+      + (p.status === "refunded" ? ". ВОЗВРАТ: вход закрыт." : ". Опубликованные модули открыты покупателю сами; «Закрыть» ниже закрывает лично.");
+  };
   const status = (message) => { $("status").textContent = message; };
   const hash = String((window.SKIPI_STUDIO || {}).keyHash || "").trim().toLowerCase();
   const accepted = async (word) => {
@@ -53,7 +63,7 @@
     $("list").replaceChildren();
     for (const [key, g] of Object.entries(guests)) {
       const button = document.createElement("button"); button.type = "button";
-      button.textContent = g.name + (g.active ? "" : " · вход закрыт") + (changed(key) ? " · не опубликовано" : "");
+      button.textContent = g.name + (purchased[key] ? " · куплен" : "") + (g.active ? "" : " · вход закрыт") + (changed(key) ? " · не опубликовано" : "");
       button.setAttribute("aria-pressed", String(key === selected));
       button.addEventListener("click", () => {
         if (dirty && !confirm("Отменить несохранённые правки?")) return;
@@ -62,12 +72,13 @@
       $("list").appendChild(button);
     }
   }
-  function accessRow(label, key, open, section) {
+  function accessRow(label, key, open, section, bought) {
     const row = document.createElement("label"); row.className = "access" + (section ? " section" : "");
     const name = document.createElement("span"); name.textContent = label;
     const select = document.createElement("select"); select.dataset.access = key;
     // Модуль по умолчанию закрыт: дверь академии сама доступа слушателю не даёт.
-    const byDefault = section ? "По умолчанию закрыто" : "Как в академии (" + (open ? "открыто" : "закрыто") + ")";
+    // Покупателю курса опубликованный модуль (открытая дверь) открыт сам, пока не поставлено «Закрыть».
+    const byDefault = section && bought ? "Как опубликовано (" + (open ? "открыто" : "закрыто") + ")" : section ? "По умолчанию закрыто" : "Как в академии (" + (open ? "открыто" : "закрыто") + ")";
     for (const [value, text] of [["", byDefault], ["true", "Открыть"], ["false", "Закрыть"]]) {
       const option = document.createElement("option"); option.value = value; option.textContent = text; select.appendChild(option);
     }
@@ -83,7 +94,8 @@
     $("invite").value = link(selected); $("preview").href = link(selected);
     $("student-login").value = accountInfo[selected]?.username || selected;
     $("student-password").value = ""; $("issued-password").value = ""; $("credential-result").hidden = true; $("credential-message").textContent = "";
-    $("login-state").textContent = accountInfo[selected]?.passwordConfigured ? "Пароль задан. Повторное назначение завершит прежние входы студента." : "Пароль ещё не задан. Студент войдёт после его назначения.";
+    $("login-state").textContent = accountInfo[selected]?.passwordConfigured ? "Пароль задан. Повторное назначение завершит прежние входы студента." : purchased[selected] ? "Покупатель ещё не задал пароль по ссылке после оплаты. Можно задать здесь и передать ему." : "Пароль ещё не задан. Студент войдёт после его назначения.";
+    $("purchase-info").textContent = purchaseLine(selected); $("purchase-info").hidden = !purchased[selected];
     $("access").replaceChildren();
     for (const b of buildings) {
       accessRow(b.label, "building:" + b.id, b.open, false);
@@ -92,7 +104,8 @@
         const checkbox = document.createElement("input"); checkbox.type = "checkbox"; checkbox.dataset.course = b.id + "/" + c.id; checkbox.checked = (g.courses || []).includes(checkbox.dataset.course);
         enrollment.append(checkbox, document.createTextNode("Назначен курс: " + c.label)); $("access").appendChild(enrollment);
         accessRow(c.label, "course:" + b.id + "/" + c.id, c.open, false);
-        for (const d of c.doors) if (d.pavilion) accessRow(d.label, "section:" + d.pavilion, d.open, true);
+        const bought = (purchased[selected]?.purchased || []).includes(b.id + "/" + c.id);
+        for (const d of c.doors) if (d.pavilion) accessRow(d.label, "section:" + d.pavilion, d.open, true, bought);
         else { const planned = document.createElement("div"); planned.className = "access section"; planned.textContent = d.label + " · модуль ещё не создан"; $("access").appendChild(planned); }
       }
     }
